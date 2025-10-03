@@ -1,0 +1,7 @@
+livekit
+livekit-agents
+livekit-plugins-google
+python-dotenv
+google-generativeai
+requests
+aiohttp
