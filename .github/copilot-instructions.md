@@ -1,5 +1,68 @@
 # AIWaiter Project Instructions
 
+## Development Workflow & Collaboration
+
+### How We Work Together
+
+This section documents the collaborative workflow between the developer (Anmol) and GitHub Copilot for this project.
+
+#### 1. **Architectural Decision Making**
+- **Developer leads architectural decisions** - Questions like "Is this over-engineering?" or "Do we really need DI?" drive major refactors
+- **Copilot provides analysis** - Compare patterns, highlight trade-offs, suggest alternatives
+- **Pragmatic approach** - YAGNI principle: only add complexity where there's a clear, concrete need
+- **Example**: The shift from DIContainer to static methods was driven by questioning whether services/controllers actually need multiple implementations
+
+#### 2. **Refactoring Process**
+- **Use TODO lists for complex work** - Break down multi-step refactors into trackable tasks
+- **Work systematically** - Complete one layer at a time (Repositories → Services → Controllers → Routes → Tests → Documentation)
+- **Mark progress explicitly** - Update TODO status as each step completes
+- **Run tests frequently** - Verify changes with `npm test` after major modifications
+
+#### 3. **Code Quality Standards**
+- **Enhanced logging** - Add LOG_SOURCE constants to all files for traceability (e.g., `const LOG_SOURCE = '[MenuService]'`)
+- **Type safety first** - Strict TypeScript mode, no `any` types without justification
+- **Consistent patterns** - Follow established patterns across similar files (all services use same structure)
+- **Documentation in code** - JSDoc comments for public methods, clear variable names
+
+#### 4. **Testing Philosophy**
+- **Tests as requirements** - 33 integration tests define expected behavior
+- **Test isolation is critical** - `RepositoryFactory.reset()` in `beforeEach()` ensures fresh state
+- **Serial execution** - Use `--runInBand` to prevent race conditions
+- **Test after refactoring** - Always run full test suite after architectural changes
+
+#### 5. **Documentation Strategy**
+- **Two-level documentation**:
+  - `GEMINI.md` - Comprehensive technical reference with code examples
+  - `copilot-instructions.md` - This file, focusing on patterns and conventions
+- **Update docs with code** - Documentation changes are part of the refactoring process, not an afterthought
+- **Capture rationale** - Document *why* decisions were made, not just *what* was implemented
+
+#### 6. **Communication Patterns**
+- **Ask clarifying questions** - "Do you want me to continue?" before large changes
+- **Explain trade-offs** - Present pros/cons when multiple approaches exist
+- **Show examples** - Code snippets demonstrate patterns better than descriptions
+- **Acknowledge challenges** - "This approach has X downside but Y benefit"
+
+#### 7. **Tool Usage Philosophy**
+- **Prefer specialized tools** - Use `replace_string_in_file` for precise edits, not terminal commands
+- **Read before modify** - Always read file context before making changes
+- **Batch related changes** - Update all similar files (e.g., all routes) together when possible
+- **Verify with tools** - Use `grep_search` to find all instances of patterns being changed
+
+#### 8. **Iteration Approach**
+- **Small, verifiable steps** - Make changes that can be tested immediately
+- **Fail fast** - Run tests early to catch issues before they compound
+- **Refactor with safety** - Tests passing before and after refactor
+- **Challenge assumptions** - "Is this the simplest way?" and "Do we actually need this?"
+
+### Key Lessons from This Project
+
+1. **DI is for swapping, not creating** - Only repositories need interfaces because they'll actually be swapped (Mock → Postgres)
+2. **Static methods for stateless logic** - Services/controllers don't need instantiation if they have no state
+3. **60% code reduction is significant** - Removing boilerplate improves readability and maintainability
+4. **Question popular patterns** - Just because everyone uses DI doesn't mean your project needs it
+5. **YAGNI wins** - Add complexity when you need it, not because you might need it someday
+
 ## Architecture Overview
 
 AIWaiter is a voice-enabled restaurant ordering system with four main components:
@@ -34,25 +97,37 @@ router.get('/', (req, res) => {
 
 **Never bypass the Presenter layer** - always route requests through Views → Presenters → Models.
 
-### TypeScript Backend (Repository Pattern)
-`ts_backend/` uses modern TypeScript with **Repository Pattern** and **Dependency Injection**:
+### TypeScript Backend (Repository Pattern + Static Methods)
+`ts_backend/` uses modern TypeScript with **Repository Pattern** for data access and **Static Methods** for services/controllers:
 
+- **RepositoryFactory** (`src/repositories/RepositoryFactory.ts`) - Factory for repository creation with singleton pattern
 - **Repositories** (`src/repositories/`) - Data access layer with interfaces and mock implementations
-- **Services** (`src/services/`) - Business logic layer using `AppResponse<T>` standardized responses
-- **Controllers** (`src/api/controllers/`) - HTTP request handling
-- **Routes** (`src/api/routes/`) - Route definitions with Zod validation middleware
+- **Services** (`src/services/`) - Business logic using **static methods** and `AppResponse<T>` standardized responses
+- **Controllers** (`src/api/controllers/`) - HTTP request handling using **static methods**
+- **Routes** (`src/api/routes/`) - Route definitions with Zod validation, calling static controller methods directly
 
 ```typescript
-// Route → Controller → Service → Repository
-// Services are instantiated per-request to support test isolation
-router.get('/', validate(schema), (req, res) => {
-    const service = new MenuService(RepositoryFactory.getMenuRepository(), logger);
-    const controller = new MenuController(service);
-    controller.getMenu(req, res);
-});
+// Route → Static Controller → Static Service → RepositoryFactory → Repository
+// Clean, simple, zero per-request overhead
+router.get('/', validate(schema), MenuController.getMenu);
+
+// In Controller (static method)
+const LOG_SOURCE = '[MenuController]';
+static getMenu(req: Request, res: Response) {
+    req.log.info(`${LOG_SOURCE} GET /api/menu`);
+    const result = MenuService.getMenu();
+    res.status(result.success ? 200 : result.status || 500).json(result);
+}
+
+// In Service (static method)
+const LOG_SOURCE = '[MenuService]';
+static getMenu(): AppResponse<MenuItem[]> {
+    const repository = RepositoryFactory.getMenuRepository();
+    return { success: true, data: repository.getAll() };
+}
 ```
 
-**Key Pattern**: Services created per-request (not singleton) to enable `RepositoryFactory.reset()` in tests.
+**Key Pattern**: Only repositories use factory pattern (for Mock → Postgres swap). Services/controllers are stateless static methods.
 
 **Response Format**: All services return `AppResponse<T>` from `types/common.ts`:
 ```typescript
@@ -170,10 +245,12 @@ Edit `AIVoiceAgent/prompts/prompts.py` for personality/instructions. Current per
 - **33 tests** covering all endpoints (health, menu, order, user)
 - Tests run serially (`--runInBand`) to prevent race conditions
 - `beforeEach()` calls `RepositoryFactory.reset()` for test isolation
-- **Critical**: Services created per-request (not cached) so tests get fresh repositories
+- **Critical**: Static services/controllers use RepositoryFactory which provides fresh mock data
 
 ### Test Patterns
 ```typescript
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
+
 describe('Menu API', () => {
   beforeEach(() => {
     RepositoryFactory.reset(); // Fresh data for each test
@@ -192,7 +269,7 @@ describe('Menu API', () => {
 ## Critical Files
 - `backend/app.js` - JS backend Express app setup, LiveKit token endpoint
 - `ts_backend/src/app.ts` - TS backend Express app with middleware chain
-- `ts_backend/src/repositories/RepositoryFactory.ts` - Singleton factory with reset() for tests
+- `ts_backend/src/repositories/RepositoryFactory.ts` - Repository factory with reset() for tests
 - `ts_backend/src/types/common.ts` - AppResponse<T> standardized response type
 - `ts_backend/jest.config.js` - Jest configuration with ts-jest
 - `frontend/src/hooks/useLiveKit.js` - Complete LiveKit integration logic
@@ -201,7 +278,7 @@ describe('Menu API', () => {
 
 ## Common Pitfalls
 - **JS Backend**: Don't use MVC terminology - it's MVP (Presenter, not Controller)
-- **TS Backend**: Don't cache service instances at router creation - create per-request for test isolation
+- **TS Backend**: Always use RepositoryFactory for repositories - services/controllers are static methods
 - **Testing**: Always use `--runInBand` to prevent parallel test race conditions
 - **TypeScript**: Include `tests/**/*` in tsconfig.json for VS Code IntelliSense
 - Always check backend health before starting agent (`main.py` does this)

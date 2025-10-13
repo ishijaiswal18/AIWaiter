@@ -1,22 +1,19 @@
-import { IOrderRepository } from '../repositories/interfaces/IOrderRepository';
 import { Order, OrderItem, OrderStatus } from '../types/entities';
 import { AppResponse } from '../types/common';
-import { Logger } from 'winston';
+import { RepositoryFactory } from '../repositories/RepositoryFactory';
+import logger from '../utils/logger';
+
+const LOG_SOURCE = '[OrderService]';
 
 /**
  * Order Service - Business logic layer for order operations
- * Implements dependency injection for testability and maintainability
+ * Uses static methods for simplicity and RepositoryFactory for data access
  */
 export class OrderService {
-  constructor(
-    private orderRepository: IOrderRepository,
-    private logger: Logger
-  ) {}
-
   /**
    * Create a new order
    */
-  createOrder(userId: string, items: OrderItem[]): AppResponse<Order> {
+  static createOrder(userId: string, items: OrderItem[]): AppResponse<Order> {
     try {
       if (!userId || !items || !Array.isArray(items) || items.length === 0) {
         return { 
@@ -25,11 +22,12 @@ export class OrderService {
           status: 400 
         };
       }
-      const newOrder = this.orderRepository.create(userId, items);
+      const repo = RepositoryFactory.getOrderRepository();
+      const newOrder = repo.create(userId, items);
       return { success: true, data: newOrder, status: 201 };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error creating order for user ${userId}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error creating order for user ${userId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -37,7 +35,7 @@ export class OrderService {
   /**
    * Update an existing order
    */
-  updateOrder(orderId: string, items: OrderItem[]): AppResponse<Order> {
+  static updateOrder(orderId: string, items: OrderItem[]): AppResponse<Order> {
     try {
       if (!items || !Array.isArray(items) || items.length === 0) {
         return { 
@@ -46,7 +44,8 @@ export class OrderService {
           status: 400 
         };
       }
-      const updatedOrder = this.orderRepository.update(orderId, items);
+      const repo = RepositoryFactory.getOrderRepository();
+      const updatedOrder = repo.update(orderId, items);
       if (!updatedOrder) {
         return { 
           success: false, 
@@ -57,7 +56,7 @@ export class OrderService {
       return { success: true, data: updatedOrder };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error updating order ${orderId}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error updating order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -65,9 +64,10 @@ export class OrderService {
   /**
    * Cancel an order
    */
-  cancelOrder(orderId: string): AppResponse {
+  static cancelOrder(orderId: string): AppResponse {
     try {
-      const cancelled = this.orderRepository.cancel(orderId);
+      const repo = RepositoryFactory.getOrderRepository();
+      const cancelled = repo.cancel(orderId);
       if (!cancelled) {
         return { 
           success: false, 
@@ -78,7 +78,7 @@ export class OrderService {
       return { success: true, status: 204 };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error cancelling order ${orderId}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error cancelling order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -86,9 +86,10 @@ export class OrderService {
   /**
    * Get order status
    */
-  getOrderStatus(orderId: string): AppResponse<OrderStatus> {
+  static getOrderStatus(orderId: string): AppResponse<OrderStatus> {
     try {
-      const status = this.orderRepository.getStatus(orderId);
+      const repo = RepositoryFactory.getOrderRepository();
+      const status = repo.getStatus(orderId);
       if (!status) {
         return { 
           success: false, 
@@ -99,7 +100,7 @@ export class OrderService {
       return { success: true, data: status };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting status for order ${orderId}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting status for order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -107,13 +108,14 @@ export class OrderService {
   /**
    * Get all orders
    */
-  getOrders(): AppResponse<Order[]> {
+  static getOrders(): AppResponse<Order[]> {
     try {
-      const orders = this.orderRepository.getAll();
+      const repo = RepositoryFactory.getOrderRepository();
+      const orders = repo.getAll();
       return { success: true, data: orders };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting all orders: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting all orders: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }

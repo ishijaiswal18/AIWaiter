@@ -1,28 +1,26 @@
-import { IMenuRepository } from '../repositories/interfaces/IMenuRepository';
 import { MenuItem } from '../types/entities';
 import { AppResponse } from '../types/common';
-import { Logger } from 'winston';
+import { RepositoryFactory } from '../repositories/RepositoryFactory';
+import logger from '../utils/logger';
+
+const LOG_SOURCE = '[MenuService]';
 
 /**
  * Menu Service - Business logic layer for menu operations
- * Implements dependency injection for testability and maintainability
+ * Uses static methods for simplicity and RepositoryFactory for data access
  */
 export class MenuService {
-  constructor(
-    private menuRepository: IMenuRepository,
-    private logger: Logger
-  ) {}
-
   /**
    * Get all menu items
    */
-  getMenu(): AppResponse<MenuItem[]> {
+  static getMenu(): AppResponse<MenuItem[]> {
     try {
-      const items = this.menuRepository.getAll();
+      const repo = RepositoryFactory.getMenuRepository();
+      const items = repo.getAll();
       return { success: true, data: items };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting all menu items: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting all menu items: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -30,9 +28,10 @@ export class MenuService {
   /**
    * Get menu items by category
    */
-  getMenuByCategory(categoryName: string): AppResponse<MenuItem[]> {
+  static getMenuByCategory(categoryName: string): AppResponse<MenuItem[]> {
     try {
-      const items = this.menuRepository.getByCategory(categoryName);
+      const repo = RepositoryFactory.getMenuRepository();
+      const items = repo.getByCategory(categoryName);
       if (items.length === 0) {
         return { 
           success: false, 
@@ -43,7 +42,7 @@ export class MenuService {
       return { success: true, data: items };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting menu by category ${categoryName}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting menu by category ${categoryName}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -51,9 +50,10 @@ export class MenuService {
   /**
    * Get menu items by type (veg/non-veg)
    */
-  getMenuByType(foodType: 'veg' | 'non-veg'): AppResponse<MenuItem[]> {
+  static getMenuByType(foodType: 'veg' | 'non-veg'): AppResponse<MenuItem[]> {
     try {
-      const items = this.menuRepository.getByType(foodType);
+      const repo = RepositoryFactory.getMenuRepository();
+      const items = repo.getByType(foodType);
       if (items.length === 0) {
         return { 
           success: false, 
@@ -64,7 +64,7 @@ export class MenuService {
       return { success: true, data: items };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting menu by type ${foodType}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting menu by type ${foodType}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -72,7 +72,7 @@ export class MenuService {
   /**
    * Search menu items by query
    */
-  searchMenu(query: string): AppResponse<MenuItem[]> {
+  static searchMenu(query: string): AppResponse<MenuItem[]> {
     try {
       if (!query) {
         return { 
@@ -81,11 +81,12 @@ export class MenuService {
           status: 400 
         };
       }
-      const items = this.menuRepository.search(query);
+      const repo = RepositoryFactory.getMenuRepository();
+      const items = repo.search(query);
       return { success: true, data: items };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error searching menu for ${query}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error searching menu for ${query}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -93,13 +94,14 @@ export class MenuService {
   /**
    * Get special menu items
    */
-  getSpecials(): AppResponse<MenuItem[]> {
+  static getSpecials(): AppResponse<MenuItem[]> {
     try {
-      const items = this.menuRepository.getSpecials();
+      const repo = RepositoryFactory.getMenuRepository();
+      const items = repo.getSpecials();
       return { success: true, data: items };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting specials: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting specials: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -107,9 +109,10 @@ export class MenuService {
   /**
    * Get item details by ID
    */
-  getItemDetails(itemId: string): AppResponse<MenuItem> {
+  static getItemDetails(itemId: string): AppResponse<MenuItem> {
     try {
-      const item = this.menuRepository.getById(itemId);
+      const repo = RepositoryFactory.getMenuRepository();
+      const item = repo.getById(itemId);
       if (!item) {
         return { 
           success: false, 
@@ -120,7 +123,7 @@ export class MenuService {
       return { success: true, data: item };
     } catch (err) {
       const error = err as Error;
-      this.logger.error(`Error getting item details for ${itemId}: ${error.message}`);
+      logger.error(`${LOG_SOURCE} Error getting item details for ${itemId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }

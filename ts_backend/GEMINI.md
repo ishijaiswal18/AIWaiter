@@ -4,38 +4,39 @@ This document provides a comprehensive overview of the TypeScript backend, which
 
 ## Architecture
 
-The TypeScript backend follows the **Repository Pattern** with **Dependency Injection**, providing clean separation of concerns and testability:
+The TypeScript backend follows the **Repository Pattern** with **Static Methods**, providing clean separation of concerns, testability, and simplicity:
 
 ### Layers
 
 1. **Repositories** (`src/repositories/`)
    - **Interfaces** (`interfaces/`) - Define contracts for data access (IMenuRepository, IOrderRepository, IUserRepository)
    - **Implementations** (`implementations/`) - Concrete implementations (currently mock data, designed for easy database integration)
+   - **RepositoryFactory** (`RepositoryFactory.ts`) - Centralized factory for repository instantiation
+     - Singleton pattern with lazy initialization
+     - `reset()` method for test isolation
+     - Future-ready for config-based database selection (Mock vs Postgres)
 
-2. **Dependency Injection** (`src/utils/DIContainer.ts`)
-   - Centralized container managing all service and repository instantiation
-   - Repository singletons with lazy initialization
-   - Service factory methods for per-request creation
-   - `reset()` method for test isolation
-   - Zero external dependencies (manual DI pattern)
-
-3. **Services** (`src/services/`)
-   - Business logic layer that consumes repositories
+2. **Services** (`src/services/`)
+   - Business logic layer using **static methods**
    - Returns standardized `AppResponse<T>` from `types/common.ts`
-   - Uses constructor injection for repositories and logger
-   - **Created per-request** via DIContainer to support test isolation
+   - Each method calls `RepositoryFactory.getXxxRepository()` directly
+   - LOG_SOURCE constant for enhanced logging with file identification
+   - **No constructors or instance state** - pure stateless logic
 
-4. **Controllers** (`src/api/controllers/`)
-   - HTTP request/response handling
-   - Thin layer that delegates to services
+3. **Controllers** (`src/api/controllers/`)
+   - HTTP request/response handling using **static methods**
+   - Thin layer that delegates to static service methods
    - Handles status code mapping from service responses
+   - LOG_SOURCE constant for request tracing
+   - **No constructors or instance state** - direct route-to-service calls
 
-5. **Routes** (`src/api/routes/`)
+4. **Routes** (`src/api/routes/`)
    - Route definitions with Zod validation middleware
-   - Uses DIContainer to create fresh service instances per request
+   - Direct static controller method calls: `router.get('/menu', MenuController.getMenu)`
    - Mounted at `/api` prefix
+   - Clean, minimal routing with zero per-request overhead
 
-6. **Middleware** (`src/middleware/`)
+5. **Middleware** (`src/middleware/`)
    - `requestId.ts` - Assigns unique ID to each request and creates request-scoped logger
    - `validation.ts` - Zod schema validation middleware factory
    - `errorHandler.ts` - Centralized error handling
@@ -43,10 +44,23 @@ The TypeScript backend follows the **Repository Pattern** with **Dependency Inje
 ### Data Flow
 
 ```
-Request → Middleware (ID, Validation) → Route → Controller → Service → Repository → Data
-                                                                         ↓
-Response ← Controller ← AppResponse<T> ← Service ← Repository Data
+Request → Middleware (ID, Validation) → Route → Static Controller → Static Service → RepositoryFactory → Repository → Data
+                                                                                                                         ↓
+Response ← Static Controller ← AppResponse<T> ← Static Service ← Repository Data
 ```
+
+### Why Static Methods?
+
+**Repository Pattern is preserved** because repositories WILL be swapped (Mock → Postgres) and tests need `reset()`.
+
+**Services and Controllers use static methods** because:
+- ✅ **No multiple implementations** - Services/controllers are just stateless logic wrappers, not swappable
+- ✅ **60% less code** - No constructors, no instantiation boilerplate, no DI ceremony
+- ✅ **Clearer call chains** - Direct static calls instead of instance creation per request
+- ✅ **Zero dependencies** - No DI frameworks, no complex configuration
+- ✅ **YAGNI principle** - Only add complexity where actually needed (repository swapping)
+- ✅ **Test isolation maintained** - `RepositoryFactory.reset()` provides fresh data per test
+- ✅ **Enhanced logging** - LOG_SOURCE constants identify file source in all logs
 
 ## Setup & Run
 
@@ -178,14 +192,25 @@ if (result.success) {
 ```
 
 ### Request-Scoped Logging
-Winston logger with unique request IDs:
+Winston logger with unique request IDs and LOG_SOURCE identifiers:
 
 ```typescript
 app.use(requestIdMiddleware); // Adds req.id and req.log
 
-// Usage in services/controllers
-this.logger.info(`Processing request for user ${userId}`);
-req.log.error(`Validation failed: ${error.message}`);
+// Usage in static controllers
+const LOG_SOURCE = '[MenuController]';
+static getMenu(req: Request, res: Response) {
+  req.log.info(`${LOG_SOURCE} GET /api/menu`);
+  const result = MenuService.getMenu();
+  // ...
+}
+
+// Usage in static services
+const LOG_SOURCE = '[MenuService]';
+static getMenu(): AppResponse<MenuItem[]> {
+  logger.info(`${LOG_SOURCE} Retrieving all menu items`);
+  // ...
+}
 ```
 
 ## Testing Strategy
@@ -194,15 +219,15 @@ req.log.error(`Validation failed: ${error.message}`);
 - **Integration tests** in `tests/api/` using Jest + Supertest
 - **33 comprehensive tests** covering all endpoints
 - **Serial execution** (`--runInBand`) to prevent race conditions
-- **Test isolation** via `DIContainer.reset()` in `beforeEach()`
+- **Test isolation** via `RepositoryFactory.reset()` in `beforeEach()`
 
 ### Test Pattern Example
 ```typescript
-import DIContainer from '../../src/utils/DIContainer';
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
 
 describe('Menu API Endpoints', () => {
   beforeEach(() => {
-    DIContainer.reset(); // Fresh repositories for each test
+    RepositoryFactory.reset(); // Fresh repositories for each test
   });
 
   it('should return all menu items', async () => {
@@ -224,9 +249,10 @@ describe('Menu API Endpoints', () => {
 
 ### Important Testing Notes
 1. **HTTP 204 responses** have no body - don't check `response.body`
-2. **Services are created per-request** via DIContainer factory methods
+2. **RepositoryFactory.reset()** in `beforeEach()` provides fresh mock data for each test
 3. **Use unique test data IDs** to avoid conflicts between tests
 4. **TypeScript config** must include `tests/**/*` for VS Code IntelliSense
+5. **All tests run serially** (`--runInBand`) to prevent race conditions with shared repository state
 
 ## Adding New Features
 
@@ -264,8 +290,8 @@ export class MockNewRepository implements INewRepository {
 }
 ```
 
-### 4. Update DIContainer
-Add to `src/utils/DIContainer.ts`:
+### 4. Update RepositoryFactory
+Add to `src/repositories/RepositoryFactory.ts`:
 ```typescript
 private static newRepository: INewRepository;
 
@@ -276,13 +302,6 @@ static getNewRepository(): INewRepository {
     return this.newRepository;
 }
 
-static createNewService(): NewService {
-    return new NewService(
-        this.getNewRepository(),
-        logger
-    );
-}
-
 // Update reset() method
 static reset(): void {
     // ... existing resets
@@ -291,36 +310,40 @@ static reset(): void {
 }
 ```
 
-### 5. Create Service
+### 5. Create Service (Static Methods)
 In `src/services/NewService.ts`:
 ```typescript
-export class NewService {
-    constructor(
-        private newRepository: INewRepository,
-        private logger: Logger
-    ) {}
+import { RepositoryFactory } from '../repositories/RepositoryFactory';
+import logger from '../utils/logger';
 
-    getAll(): AppResponse<NewEntity[]> {
+const LOG_SOURCE = '[NewService]';
+
+export class NewService {
+    static getAll(): AppResponse<NewEntity[]> {
         try {
-            const entities = this.newRepository.getAll();
+            logger.info(`${LOG_SOURCE} Retrieving all entities`);
+            const repository = RepositoryFactory.getNewRepository();
+            const entities = repository.getAll();
             return { success: true, data: entities, status: 200 };
         } catch (err) {
-            this.logger.error(`Error fetching entities: ${err.message}`);
+            logger.error(`${LOG_SOURCE} Error fetching entities: ${err.message}`);
             return { success: false, message: 'Internal server error' };
         }
     }
 }
 ```
 
-### 6. Create Controller
+### 6. Create Controller (Static Methods)
 In `src/api/controllers/NewController.ts`:
 ```typescript
-export class NewController {
-    constructor(private newService: NewService) {}
+import { NewService } from '../../services/NewService';
 
-    getAll = (req: Request, res: Response): void => {
-        req.log.info('GET /api/new');
-        const result = this.newService.getAll();
+const LOG_SOURCE = '[NewController]';
+
+export class NewController {
+    static getAll(req: Request, res: Response): void {
+        req.log.info(`${LOG_SOURCE} GET /api/new`);
+        const result = NewService.getAll();
         
         if (result.success) {
             res.status(result.status || 200).json(result);
@@ -331,19 +354,16 @@ export class NewController {
 }
 ```
 
-### 7. Create Routes with Validation
+### 7. Create Routes with Static Controller Methods
 In `src/api/routes/newRoutes.ts`:
 ```typescript
-import DIContainer from '../../utils/DIContainer';
+import { NewController } from '../controllers/NewController';
 
 export function createNewRouter(): Router {
     const router = Router();
     
-    router.get('/', validate(newSchema), (req, res) => {
-        const service = DIContainer.createNewService();
-        const controller = new NewController(service);
-        controller.getAll(req, res);
-    });
+    // Direct static method call - clean and simple!
+    router.get('/', validate(newSchema), NewController.getAll);
     
     return router;
 }
@@ -380,11 +400,11 @@ export function createApiRouter(): Router {
 ### 10. Write Tests
 Create `tests/api/new.test.ts`:
 ```typescript
-import DIContainer from '../../src/utils/DIContainer';
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
 
 describe('New API Endpoints', () => {
     beforeEach(() => {
-        DIContainer.reset();
+        RepositoryFactory.reset(); // Fresh data for each test
     });
 
     it('should return all entities', async () => {
@@ -409,17 +429,18 @@ The TypeScript backend is a complete reimplementation with:
 
 ### Key Differences from JS Backend
 
-| Aspect | JS Backend (MVP) | TS Backend (Repository) |
-|--------|------------------|------------------------|
+| Aspect | JS Backend (MVP) | TS Backend (Repository + Static) |
+|--------|------------------|----------------------------------|
 | **Architecture** | Model-View-Presenter | Repository-Service-Controller |
-| **Data Layer** | Direct model calls | Repository interfaces |
-| **Business Logic** | Presenters | Services |
+| **Data Layer** | Direct model calls | Repository interfaces with Factory |
+| **Business Logic** | Presenters | Static Service methods |
+| **Controllers** | Route handlers | Static Controller methods |
 | **Response Format** | Varied | Standardized AppResponse<T> |
 | **Validation** | Manual | Zod schemas |
 | **Testing** | None | 33 integration tests |
 | **Type Safety** | JavaScript | Strict TypeScript |
 | **Port** | 5000 | 5001 |
-| **DI Support** | No | Yes (constructor injection) |
+| **DI Pattern** | No | RepositoryFactory only (pragmatic approach) |
 
 Both backends are functionally equivalent and can be used interchangeably with the frontend and AI agent.
 
@@ -433,8 +454,8 @@ If you see "Cannot find type definition file for 'jest'" or similar:
 
 ### Test Failures
 - Ensure tests run serially: `npm test` uses `--runInBand` flag
-- Check that `DIContainer.reset()` is in `beforeEach()` hooks
-- Verify services are created per-request via DIContainer, not cached
+- Check that `RepositoryFactory.reset()` is in `beforeEach()` hooks
+- Verify static methods are being called correctly
 
 ### Compilation Errors
 - Run `tsc --noEmit` to check for TypeScript errors
@@ -445,39 +466,51 @@ If you see "Cannot find type definition file for 'jest'" or similar:
 - TS backend uses port 5001 by default
 - JS backend uses port 5000
 
-## Dependency Injection with DIContainer
+## Repository Factory Pattern
 
-### Why Manual DI?
+### Why Only Repositories Use Factory Pattern?
 
-This project uses **manual dependency injection** via `DIContainer` instead of external frameworks (TSyringe, InversifyJS, TypeDI) because:
+This project uses a **pragmatic, YAGNI-driven approach**:
 
-1. **Project Scale**: Only 3 services - external frameworks are overkill
-2. **Zero Dependencies**: No packages to maintain or debug
-3. **Full Control**: Easy to understand and modify
-4. **Simplicity**: Any developer can understand immediately
-5. **Type Safety**: Full TypeScript support without decorators
+**RepositoryFactory exists** because:
+1. ✅ **Repositories WILL be swapped** - Mock → Postgres migration is coming
+2. ✅ **Tests need reset()** - Fresh mock data for each test
+3. ✅ **Interface pattern needed** - Different implementations (Mock, Postgres, potential Redis cache)
 
-**When to consider frameworks:** If you grow beyond 10-15 services or need advanced features like circular dependency resolution, scoped lifetimes, or multi-tenant configurations.
+**Services/Controllers use static methods** because:
+1. ✅ **No multiple implementations** - They're just stateless logic wrappers
+2. ✅ **Never swapped** - No alternate MenuService, OrderService implementations needed
+3. ✅ **YAGNI (You Aren't Gonna Need It)** - Don't add DI ceremony without a clear need
+4. ✅ **60% less code** - No constructors, no instantiation, no per-request overhead
 
-### DIContainer Usage
+### When to Use External DI Frameworks
 
-**Creating Services (in routes):**
+Consider TSyringe, InversifyJS, or TypeDI when you need:
+- **10+ services** with complex dependency graphs
+- **Circular dependencies** that need resolution
+- **Scoped lifetimes** (transient, singleton, request-scoped)
+- **Multi-tenant** configurations with runtime tenant-specific services
+
+For this project: **Manual RepositoryFactory + Static methods is the right balance.**
+
+### RepositoryFactory Usage
+
+**In Services (static methods):**
 ```typescript
-import DIContainer from '../../utils/DIContainer';
-
-router.get('/menu', (req, res) => {
-  const service = DIContainer.createMenuService(); // Fresh per-request
-  const controller = new MenuController(service);
-  controller.getMenu(req, res);
-});
+static getMenu(): AppResponse<MenuItem[]> {
+  const repository = RepositoryFactory.getMenuRepository();
+  const items = repository.getAll();
+  return { success: true, data: items };
+}
 ```
 
-**Testing with DIContainer:**
+**In Tests:**
 ```typescript
-import DIContainer from '../../src/utils/DIContainer';
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
 
 describe('Menu API', () => {
   beforeEach(() => {
+    RepositoryFactory.reset(); // Fresh mock data
     DIContainer.reset(); // Fresh repositories for each test
   });
 });

@@ -1,11 +1,11 @@
 import request from 'supertest';
 import app from '../../src/app';
-import DIContainer from '../../src/utils/DIContainer';
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
 
 describe('User API Endpoints', () => {
   // Reset user data before each test
   beforeEach(() => {
-    DIContainer.reset();
+    RepositoryFactory.reset();
   });
 
   describe('GET /api/users/:userId/favorites', () => {

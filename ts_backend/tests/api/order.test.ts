@@ -1,11 +1,11 @@
 import request from 'supertest';
 import app from '../../src/app';
-import DIContainer from '../../src/utils/DIContainer';
+import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
 
 describe('Order API Endpoints', () => {
   // Reset orders before each test
   beforeEach(() => {
-    DIContainer.reset();
+    RepositoryFactory.reset();
   });
 
   describe('POST /api/orders', () => {

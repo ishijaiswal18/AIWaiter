@@ -1,41 +1,41 @@
 import { Request, Response } from 'express';
 import { MenuService } from '../../services/MenuService';
 
+const LOG_SOURCE = '[MenuController]';
+
 /**
  * Menu Controller - Handles HTTP requests for menu operations
- * Delegates business logic to MenuService
+ * Delegates business logic to MenuService using static methods
  */
 export class MenuController {
-  constructor(private menuService: MenuService) {}
-
   /**
    * GET /api/menu
    * Get all menu items
    */
-  getMenu = (req: Request, res: Response): void => {
-    req.log.info('GET /api/menu');
-    const result = this.menuService.getMenu();
+  static getMenu(req: Request, res: Response): void {
+    req.log.info(`${LOG_SOURCE} GET /api/menu`);
+    const result = MenuService.getMenu();
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 
   /**
    * GET /api/menu/category/:categoryName
    * Get menu items by category
    */
-  getMenuByCategory = (req: Request, res: Response): void => {
+  static getMenuByCategory(req: Request, res: Response): void {
     const { categoryName } = req.params;
-    req.log.info(`GET /api/menu/category/${categoryName}`);
-    const result = this.menuService.getMenuByCategory(categoryName);
+    req.log.info(`${LOG_SOURCE} GET /api/menu/category/${categoryName}`);
+    const result = MenuService.getMenuByCategory(categoryName);
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 
   /**
    * GET /api/menu/type/:foodType
    * Get menu items by food type (veg/non-veg)
    */
-  getMenuByType = (req: Request, res: Response): void => {
+  static getMenuByType(req: Request, res: Response): void {
     const { foodType } = req.params;
-    req.log.info(`GET /api/menu/type/${foodType}`);
+    req.log.info(`${LOG_SOURCE} GET /api/menu/type/${foodType}`);
     
     // Validate foodType
     if (foodType !== 'veg' && foodType !== 'non-veg') {
@@ -46,39 +46,39 @@ export class MenuController {
       return;
     }
     
-    const result = this.menuService.getMenuByType(foodType);
+    const result = MenuService.getMenuByType(foodType);
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 
   /**
    * GET /api/menu/search?q=query
    * Search menu items
    */
-  searchMenu = (req: Request, res: Response): void => {
+  static searchMenu(req: Request, res: Response): void {
     const { q } = req.query;
-    req.log.info(`GET /api/menu/search?q=${q}`);
-    const result = this.menuService.searchMenu(q as string);
+    req.log.info(`${LOG_SOURCE} GET /api/menu/search?q=${q}`);
+    const result = MenuService.searchMenu(q as string);
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 
   /**
    * GET /api/menu/specials
    * Get special menu items
    */
-  getSpecials = (req: Request, res: Response): void => {
-    req.log.info('GET /api/menu/specials');
-    const result = this.menuService.getSpecials();
+  static getSpecials(req: Request, res: Response): void {
+    req.log.info(`${LOG_SOURCE} GET /api/menu/specials`);
+    const result = MenuService.getSpecials();
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 
   /**
    * GET /api/menu/:itemId
    * Get item details by ID
    */
-  getItemDetails = (req: Request, res: Response): void => {
+  static getItemDetails(req: Request, res: Response): void {
     const { itemId } = req.params;
-    req.log.info(`GET /api/menu/${itemId}`);
-    const result = this.menuService.getItemDetails(itemId);
+    req.log.info(`${LOG_SOURCE} GET /api/menu/${itemId}`);
+    const result = MenuService.getItemDetails(itemId);
     res.status(result.success ? 200 : result.status || 500).json(result);
-  };
+  }
 }
