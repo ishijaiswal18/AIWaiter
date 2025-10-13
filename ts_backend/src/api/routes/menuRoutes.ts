@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import { MenuController } from '../controllers/MenuController';
-import { MenuService } from '../../services/MenuService';
-import RepositoryFactory from '../../repositories/RepositoryFactory';
-import logger from '../../utils/logger';
+import DIContainer from '../../utils/DIContainer';
 import { validate } from '../../middleware/validation';
 import { 
   searchMenuSchema, 
@@ -13,23 +11,48 @@ import {
 
 /**
  * Create menu router with dependency injection
+ * Services are created per-request for test isolation
  */
 export function createMenuRouter(): Router {
   const router = Router();
-  
-  // Initialize dependencies
-  const menuRepository = RepositoryFactory.getMenuRepository();
-  const menuService = new MenuService(menuRepository, logger);
-  const menuController = new MenuController(menuService);
 
   // Route definitions with validation
   // Note: Order matters - more specific routes before generic ones
-  router.get('/specials', menuController.getSpecials);
-  router.get('/search', validate(searchMenuSchema), menuController.searchMenu);
-  router.get('/category/:categoryName', validate(categoryNameSchema), menuController.getMenuByCategory);
-  router.get('/type/:foodType', validate(foodTypeSchema), menuController.getMenuByType);
-  router.get('/:itemId', validate(menuItemIdSchema), menuController.getItemDetails);
-  router.get('/', menuController.getMenu);
+  router.get('/specials', (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.getSpecials(req, res);
+  });
+  
+  router.get('/search', validate(searchMenuSchema), (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.searchMenu(req, res);
+  });
+  
+  router.get('/category/:categoryName', validate(categoryNameSchema), (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.getMenuByCategory(req, res);
+  });
+  
+  router.get('/type/:foodType', validate(foodTypeSchema), (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.getMenuByType(req, res);
+  });
+  
+  router.get('/:itemId', validate(menuItemIdSchema), (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.getItemDetails(req, res);
+  });
+  
+  router.get('/', (req, res) => {
+    const service = DIContainer.createMenuService();
+    const controller = new MenuController(service);
+    controller.getMenu(req, res);
+  });
 
   return router;
 }

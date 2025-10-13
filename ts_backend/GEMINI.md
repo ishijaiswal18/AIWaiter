@@ -11,25 +11,31 @@ The TypeScript backend follows the **Repository Pattern** with **Dependency Inje
 1. **Repositories** (`src/repositories/`)
    - **Interfaces** (`interfaces/`) - Define contracts for data access (IMenuRepository, IOrderRepository, IUserRepository)
    - **Implementations** (`implementations/`) - Concrete implementations (currently mock data, designed for easy database integration)
-   - **Factory** (`RepositoryFactory.ts`) - Singleton factory providing repository instances with `reset()` for testing
 
-2. **Services** (`src/services/`)
+2. **Dependency Injection** (`src/utils/DIContainer.ts`)
+   - Centralized container managing all service and repository instantiation
+   - Repository singletons with lazy initialization
+   - Service factory methods for per-request creation
+   - `reset()` method for test isolation
+   - Zero external dependencies (manual DI pattern)
+
+3. **Services** (`src/services/`)
    - Business logic layer that consumes repositories
    - Returns standardized `AppResponse<T>` from `types/common.ts`
    - Uses constructor injection for repositories and logger
-   - **Created per-request** (not cached) to support test isolation
+   - **Created per-request** via DIContainer to support test isolation
 
-3. **Controllers** (`src/api/controllers/`)
+4. **Controllers** (`src/api/controllers/`)
    - HTTP request/response handling
    - Thin layer that delegates to services
    - Handles status code mapping from service responses
 
-4. **Routes** (`src/api/routes/`)
+5. **Routes** (`src/api/routes/`)
    - Route definitions with Zod validation middleware
-   - Creates fresh service instances per request
+   - Uses DIContainer to create fresh service instances per request
    - Mounted at `/api` prefix
 
-5. **Middleware** (`src/middleware/`)
+6. **Middleware** (`src/middleware/`)
    - `requestId.ts` - Assigns unique ID to each request and creates request-scoped logger
    - `validation.ts` - Zod schema validation middleware factory
    - `errorHandler.ts` - Centralized error handling
@@ -188,13 +194,15 @@ req.log.error(`Validation failed: ${error.message}`);
 - **Integration tests** in `tests/api/` using Jest + Supertest
 - **33 comprehensive tests** covering all endpoints
 - **Serial execution** (`--runInBand`) to prevent race conditions
-- **Test isolation** via `RepositoryFactory.reset()` in `beforeEach()`
+- **Test isolation** via `DIContainer.reset()` in `beforeEach()`
 
 ### Test Pattern Example
 ```typescript
+import DIContainer from '../../src/utils/DIContainer';
+
 describe('Menu API Endpoints', () => {
   beforeEach(() => {
-    RepositoryFactory.reset(); // Fresh repositories for each test
+    DIContainer.reset(); // Fresh repositories for each test
   });
 
   it('should return all menu items', async () => {
@@ -216,7 +224,7 @@ describe('Menu API Endpoints', () => {
 
 ### Important Testing Notes
 1. **HTTP 204 responses** have no body - don't check `response.body`
-2. **Services must be created per-request** - not cached at router initialization
+2. **Services are created per-request** via DIContainer factory methods
 3. **Use unique test data IDs** to avoid conflicts between tests
 4. **TypeScript config** must include `tests/**/*` for VS Code IntelliSense
 
@@ -256,8 +264,8 @@ export class MockNewRepository implements INewRepository {
 }
 ```
 
-### 4. Update Repository Factory
-Add to `src/repositories/RepositoryFactory.ts`:
+### 4. Update DIContainer
+Add to `src/utils/DIContainer.ts`:
 ```typescript
 private static newRepository: INewRepository;
 
@@ -268,9 +276,17 @@ static getNewRepository(): INewRepository {
     return this.newRepository;
 }
 
+static createNewService(): NewService {
+    return new NewService(
+        this.getNewRepository(),
+        logger
+    );
+}
+
 // Update reset() method
 static reset(): void {
     // ... existing resets
+    // @ts-ignore
     this.newRepository = undefined;
 }
 ```
@@ -318,17 +334,14 @@ export class NewController {
 ### 7. Create Routes with Validation
 In `src/api/routes/newRoutes.ts`:
 ```typescript
+import DIContainer from '../../utils/DIContainer';
+
 export function createNewRouter(): Router {
     const router = Router();
     
-    // Helper to get fresh service instance
-    function getNewService(): NewService {
-        const repo = RepositoryFactory.getNewRepository();
-        return new NewService(repo, logger);
-    }
-    
     router.get('/', validate(newSchema), (req, res) => {
-        const controller = new NewController(getNewService());
+        const service = DIContainer.createNewService();
+        const controller = new NewController(service);
         controller.getAll(req, res);
     });
     
@@ -367,9 +380,11 @@ export function createApiRouter(): Router {
 ### 10. Write Tests
 Create `tests/api/new.test.ts`:
 ```typescript
+import DIContainer from '../../src/utils/DIContainer';
+
 describe('New API Endpoints', () => {
     beforeEach(() => {
-        RepositoryFactory.reset();
+        DIContainer.reset();
     });
 
     it('should return all entities', async () => {
@@ -418,8 +433,8 @@ If you see "Cannot find type definition file for 'jest'" or similar:
 
 ### Test Failures
 - Ensure tests run serially: `npm test` uses `--runInBand` flag
-- Check that `RepositoryFactory.reset()` is in `beforeEach()` hooks
-- Verify services are created per-request, not cached
+- Check that `DIContainer.reset()` is in `beforeEach()` hooks
+- Verify services are created per-request via DIContainer, not cached
 
 ### Compilation Errors
 - Run `tsc --noEmit` to check for TypeScript errors
@@ -429,4 +444,68 @@ If you see "Cannot find type definition file for 'jest'" or similar:
 ### Port Conflicts
 - TS backend uses port 5001 by default
 - JS backend uses port 5000
+
+## Dependency Injection with DIContainer
+
+### Why Manual DI?
+
+This project uses **manual dependency injection** via `DIContainer` instead of external frameworks (TSyringe, InversifyJS, TypeDI) because:
+
+1. **Project Scale**: Only 3 services - external frameworks are overkill
+2. **Zero Dependencies**: No packages to maintain or debug
+3. **Full Control**: Easy to understand and modify
+4. **Simplicity**: Any developer can understand immediately
+5. **Type Safety**: Full TypeScript support without decorators
+
+**When to consider frameworks:** If you grow beyond 10-15 services or need advanced features like circular dependency resolution, scoped lifetimes, or multi-tenant configurations.
+
+### DIContainer Usage
+
+**Creating Services (in routes):**
+```typescript
+import DIContainer from '../../utils/DIContainer';
+
+router.get('/menu', (req, res) => {
+  const service = DIContainer.createMenuService(); // Fresh per-request
+  const controller = new MenuController(service);
+  controller.getMenu(req, res);
+});
+```
+
+**Testing with DIContainer:**
+```typescript
+import DIContainer from '../../src/utils/DIContainer';
+
+describe('Menu API', () => {
+  beforeEach(() => {
+    DIContainer.reset(); // Fresh repositories for each test
+  });
+});
+```
+
+**Available Methods:**
+- `DIContainer.createMenuService()` - Create MenuService instance
+- `DIContainer.createOrderService()` - Create OrderService instance
+- `DIContainer.createUserService()` - Create UserService instance
+- `DIContainer.reset()` - Reset all repositories (for testing)
+
+### Common Patterns
+
+✅ **DO: Create services per-request**
+```typescript
+router.get('/path', (req, res) => {
+  const service = DIContainer.createMenuService(); // ✅ Fresh instance
+  const controller = new MenuController(service);
+  controller.handleRequest(req, res);
+});
+```
+
+❌ **DON'T: Cache service instances**
+```typescript
+// ❌ WRONG - service cached at router creation
+const service = DIContainer.createMenuService();
+router.get('/path', (req, res) => {
+  // Uses stale cached service - tests will fail
+});
+```
 - Change via `PORT` in `.env` file

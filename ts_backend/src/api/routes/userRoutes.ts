@@ -1,8 +1,6 @@
 import { Router } from 'express';
 import { UserController } from '../controllers/UserController';
-import { UserService } from '../../services/UserService';
-import RepositoryFactory from '../../repositories/RepositoryFactory';
-import logger from '../../utils/logger';
+import DIContainer from '../../utils/DIContainer';
 import { validate } from '../../middleware/validation';
 import { 
   userIdSchema, 
@@ -12,17 +10,8 @@ import {
 } from '../../types/validationSchemas';
 
 /**
- * Get fresh service instance with current repositories
- * This ensures tests get fresh repositories after reset()
- */
-function getUserService(): UserService {
-  const userRepository = RepositoryFactory.getUserRepository();
-  const menuRepository = RepositoryFactory.getMenuRepository();
-  return new UserService(userRepository, menuRepository, logger);
-}
-
-/**
  * Create user router with dependency injection
+ * Services are created per-request for test isolation
  */
 export function createUserRouter(): Router {
   const router = Router();
@@ -30,22 +19,26 @@ export function createUserRouter(): Router {
   // Route definitions with validation
   // Note: More specific routes before generic ones
   router.post('/waiter/call', validate(callWaiterSchema), (req, res) => {
-    const controller = new UserController(getUserService());
+    const service = DIContainer.createUserService();
+    const controller = new UserController(service);
     controller.callWaiter(req, res);
   });
   
   router.get('/:userId/favorites', validate(userIdSchema), (req, res) => {
-    const controller = new UserController(getUserService());
+    const service = DIContainer.createUserService();
+    const controller = new UserController(service);
     controller.getUserFavorites(req, res);
   });
   
   router.post('/:userId/favorites', validate(addFavoriteSchema), (req, res) => {
-    const controller = new UserController(getUserService());
+    const service = DIContainer.createUserService();
+    const controller = new UserController(service);
     controller.addFavorite(req, res);
   });
   
   router.delete('/:userId/favorites/:itemId', validate(removeFavoriteSchema), (req, res) => {
-    const controller = new UserController(getUserService());
+    const service = DIContainer.createUserService();
+    const controller = new UserController(service);
     controller.removeFavorite(req, res);
   });
 
