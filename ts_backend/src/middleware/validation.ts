@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
+import { createLogger } from '../utils/logger';
+
+const logger = createLogger('ValidationMiddleware');
 
 /**
  * Validation middleware factory using Zod schemas
@@ -26,7 +29,7 @@ export function validate(schema: ZodSchema) {
           message: err.message,
         }));
         
-        req.log.warn('Validation failed', { errors });
+        logger.warn('Validation failed', { errors });
         
         res.status(400).json({
           success: false,
@@ -35,7 +38,7 @@ export function validate(schema: ZodSchema) {
         });
       } else {
         // Unexpected error
-        req.log.error('Unexpected validation error', { error });
+        logger.error('Unexpected validation error', { error });
         res.status(500).json({
           success: false,
           message: 'Internal server error',

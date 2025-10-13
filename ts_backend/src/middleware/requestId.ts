@@ -1,19 +1,19 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
-import mainLogger from '../utils/logger';
+import { requestContext, createLogger } from '../utils/logger';
+
+const logger = createLogger('RequestIdMiddleware');
 
 export const requestIdMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const requestId = randomUUID();
-  req.id = requestId;
-
-  // Create a request-scoped child logger
-  req.log = mainLogger.child({ requestId });
 
   // Set header for client-side correlation
   res.setHeader('X-Request-Id', requestId);
 
-  req.log.info(`Request received: ${req.method} ${req.originalUrl}`);
-
-  next();
+  // Store request context in AsyncLocalStorage for the entire request lifecycle
+  requestContext.run({ requestId }, () => {
+    logger.info(`Request received: ${req.method} ${req.originalUrl}`);
+    next();
+  });
 };

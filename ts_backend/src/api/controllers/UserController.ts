@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { UserService } from '../../services/UserService';
+import { createLogger } from '../../utils/logger';
 
-const LOG_SOURCE = '[UserController]';
+const logger = createLogger('UserController');
 
 /**
  * User Controller - Handles HTTP requests for user operations
  * Delegates business logic to UserService using static methods
+ * Logger automatically includes requestId from AsyncLocalStorage context
  */
 export class UserController {
   /**
@@ -14,7 +16,7 @@ export class UserController {
    */
   static getUserFavorites(req: Request, res: Response): void {
     const { userId } = req.params;
-    req.log.info(`${LOG_SOURCE} GET /api/users/${userId}/favorites`);
+    logger.info(`GET /api/users/${userId}/favorites`);
     const result = UserService.getUserFavorites(userId);
     res.status(result.success ? 200 : result.status || 500).json(result);
   }
@@ -26,7 +28,7 @@ export class UserController {
   static addFavorite(req: Request, res: Response): void {
     const { userId } = req.params;
     const { itemId } = req.body;
-    req.log.info(`${LOG_SOURCE} POST /api/users/${userId}/favorites for item ${itemId}`);
+    logger.info(`POST /api/users/${userId}/favorites for item ${itemId}`);
     const result = UserService.addFavorite(userId, itemId);
     res.status(result.success ? result.status || 200 : result.status || 500).json(result);
   }
@@ -37,7 +39,7 @@ export class UserController {
    */
   static removeFavorite(req: Request, res: Response): void {
     const { userId, itemId } = req.params;
-    req.log.info(`${LOG_SOURCE} DELETE /api/users/${userId}/favorites/${itemId}`);
+    logger.info(`DELETE /api/users/${userId}/favorites/${itemId}`);
     const result = UserService.removeFavorite(userId, itemId);
     res.status(result.success ? result.status || 200 : result.status || 500).json(result);
   }
@@ -48,7 +50,7 @@ export class UserController {
    */
   static callWaiter(req: Request, res: Response): void {
     const { userId, message } = req.body;
-    req.log.info(`${LOG_SOURCE} POST /api/users/waiter/call by user ${userId}. Message: ${message || 'No message provided.'}`);
+    logger.info(`POST /api/users/waiter/call by user ${userId}. Message: ${message || 'No message provided.'}`);
     res.status(200).json({ success: true, message: 'Human waiter has been notified.' });
   }
 }

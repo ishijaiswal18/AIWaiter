@@ -1,13 +1,14 @@
 import { MenuItem } from '../types/entities';
 import { AppResponse } from '../types/common';
 import { RepositoryFactory } from '../repositories/RepositoryFactory';
-import logger from '../utils/logger';
+import { createLogger } from '../utils/logger';
 
-const LOG_SOURCE = '[UserService]';
+const logger = createLogger('UserService');
 
 /**
  * User Service - Business logic layer for user operations
  * Uses static methods for simplicity and RepositoryFactory for data access
+ * Logger automatically includes requestId from AsyncLocalStorage context
  */
 export class UserService {
   /**
@@ -24,10 +25,11 @@ export class UserService {
         .map(id => menuRepo.getById(id))
         .filter((item): item is MenuItem => item !== undefined);
       
+      logger.info(`Retrieved ${favoriteItems.length} favorites for user ${userId}`);
       return { success: true, data: favoriteItems };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error getting favorites for user ${userId}: ${error.message}`);
+      logger.error(`Error getting favorites for user ${userId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -38,6 +40,7 @@ export class UserService {
   static addFavorite(userId: string, itemId: string): AppResponse<string[]> {
     try {
       if (!itemId) {
+        logger.info(`itemId missing for user ${userId}`);
         return { 
           success: false, 
           message: 'itemId is required', 
@@ -50,6 +53,7 @@ export class UserService {
       
       // Validate item exists in menu
       if (!menuRepo.getById(itemId)) {
+        logger.info(`Item ${itemId} not found in menu for user ${userId}`);
         return { 
           success: false, 
           message: 'Item not found in menu', 
@@ -59,6 +63,7 @@ export class UserService {
       
       const added = userRepo.addFavorite(userId, itemId);
       if (!added) {
+        logger.info(`Item ${itemId} already favorited by user ${userId}`);
         return { 
           success: false, 
           message: 'Item already favorited', 
@@ -66,6 +71,7 @@ export class UserService {
         }; // Conflict
       }
       
+      logger.info(`Added favorite ${itemId} for user ${userId}`);
       return { 
         success: true, 
         data: userRepo.getFavorites(userId), 
@@ -73,7 +79,7 @@ export class UserService {
       };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error adding favorite ${itemId} for user ${userId}: ${error.message}`);
+      logger.error(`Error adding favorite ${itemId} for user ${userId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -86,16 +92,18 @@ export class UserService {
       const userRepo = RepositoryFactory.getUserRepository();
       const removed = userRepo.removeFavorite(userId, itemId);
       if (!removed) {
+        logger.info(`Favorite ${itemId} not found for user ${userId}`);
         return { 
           success: false, 
           message: 'Favorite item not found for this user', 
           status: 404 
         };
       }
+      logger.info(`Removed favorite ${itemId} for user ${userId}`);
       return { success: true, status: 204 };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error removing favorite ${itemId} for user ${userId}: ${error.message}`);
+      logger.error(`Error removing favorite ${itemId} for user ${userId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }

@@ -4,8 +4,10 @@ import cors from 'cors';
 import { requestIdMiddleware } from './middleware/requestId';
 import { errorHandlerMiddleware } from './middleware/errorHandler';
 import { createApiRouter } from './api/routes';
+import { createLogger } from './utils/logger';
 
 const app = express();
+const logger = createLogger('HealthCheck');
 
 // Core Middleware
 app.use(cors());
@@ -19,7 +21,7 @@ app.use('/api', createApiRouter());
 
 // Health Check Endpoint
 app.get('/health', (req: Request, res: Response) => {
-  req.log.info('Health check successful');
+  logger.info('Health check successful');
   res.status(200).json({ status: 'ok' });
 });
 

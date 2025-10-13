@@ -20,14 +20,14 @@ The TypeScript backend follows the **Repository Pattern** with **Static Methods*
    - Business logic layer using **static methods**
    - Returns standardized `AppResponse<T>` from `types/common.ts`
    - Each method calls `RepositoryFactory.getXxxRepository()` directly
-   - LOG_SOURCE constant for enhanced logging with file identification
+   - Uses `createLogger('ServiceName')` for automatic request context logging
    - **No constructors or instance state** - pure stateless logic
 
 3. **Controllers** (`src/api/controllers/`)
    - HTTP request/response handling using **static methods**
    - Thin layer that delegates to static service methods
    - Handles status code mapping from service responses
-   - LOG_SOURCE constant for request tracing
+   - Uses `createLogger('ControllerName')` for automatic request tracing
    - **No constructors or instance state** - direct route-to-service calls
 
 4. **Routes** (`src/api/routes/`)
@@ -191,35 +191,93 @@ if (result.success) {
 }
 ```
 
-### Request-Scoped Logging
-Winston logger with unique request IDs and LOG_SOURCE identifiers:
+### Logging Architecture with AsyncLocalStorage
+
+The backend uses **Winston** with **AsyncLocalStorage** for automatic request context propagation. This provides clean, consistent logging across all layers without modifying the Express Request object.
+
+#### Key Features
+- **Zero Request Object Modifications** - No `req.log` or `req.id` attached
+- **Automatic Context Propagation** - requestId flows through entire request lifecycle via AsyncLocalStorage
+- **Single Pattern Everywhere** - `createLogger('SourceName')` in all files
+- **Structured Logs** - JSON format with `requestId` and `source` metadata
+- **Concurrent Request Safe** - AsyncLocalStorage isolates contexts per request (verified with 50+ concurrent request tests)
+
+#### Log Format
+
+**Console Output (Development):**
+```
+2025-10-13 07:40:06 [info] [reqId:e4bb980c-975c-4184-83ca-5a942b295337] [source:MenuController]: GET /api/menu
+2025-10-13 07:40:06 [info] [reqId:e4bb980c-975c-4184-83ca-5a942b295337] [source:MenuService]: Retrieved all menu items
+```
+
+**JSON Logs (Production - logs/app.log):**
+```json
+{
+  "level": "info",
+  "message": "GET /api/menu",
+  "requestId": "e4bb980c-975c-4184-83ca-5a942b295337",
+  "source": "MenuController",
+  "timestamp": "2025-10-13T07:40:06.000Z"
+}
+```
+
+#### Usage Pattern
 
 ```typescript
-app.use(requestIdMiddleware); // Adds req.id and req.log
+// 1. Import createLogger at top of file
+import { createLogger } from '../utils/logger';
 
-// Usage in static controllers
-const LOG_SOURCE = '[MenuController]';
+// 2. Create logger with source name (once per file)
+const logger = createLogger('MenuController');
+
+// 3. Use logger anywhere - requestId automatically included!
 static getMenu(req: Request, res: Response) {
-  req.log.info(`${LOG_SOURCE} GET /api/menu`);
+  logger.info('GET /api/menu');  // No req.log, no LOG_SOURCE prefix!
   const result = MenuService.getMenu();
-  // ...
+  res.status(result.success ? 200 : 500).json(result);
 }
+```
 
-// Usage in static services
-const LOG_SOURCE = '[MenuService]';
-static getMenu(): AppResponse<MenuItem[]> {
-  logger.info(`${LOG_SOURCE} Retrieving all menu items`);
-  // ...
-}
+#### How AsyncLocalStorage Works
+
+1. **Middleware Sets Context** (`requestId.ts`):
+   ```typescript
+   const requestId = randomUUID();
+   requestContext.run({ requestId }, () => {
+     logger.info(`Request received: ${req.method} ${req.originalUrl}`);
+     next(); // All downstream code inherits this context
+   });
+   ```
+
+2. **Context Automatically Propagates**:
+   - Controllers call services
+   - Services call repositories
+   - All async operations (promises, callbacks) maintain context
+   - Every `logger.info()` automatically includes the requestId
+
+3. **Concurrent Request Isolation**:
+   - Each request gets its own isolated AsyncLocalStorage context
+   - No context bleeding between simultaneous requests
+   - Verified with concurrent request integration tests (37 tests total)
+
+#### Source Names Used
+
+| Layer | Source Names |
+|-------|-------------|
+| **Middleware** | `RequestIdMiddleware`, `ValidationMiddleware`, `ErrorHandler` |
+| **Routes** | `HealthCheck` |
+| **Controllers** | `MenuController`, `OrderController`, `UserController` |
+| **Services** | `MenuService`, `OrderService`, `UserService` |
 ```
 
 ## Testing Strategy
 
 ### Test Structure
 - **Integration tests** in `tests/api/` using Jest + Supertest
-- **33 comprehensive tests** covering all endpoints
+- **37 comprehensive tests** covering all endpoints + concurrent request scenarios
 - **Serial execution** (`--runInBand`) to prevent race conditions
 - **Test isolation** via `RepositoryFactory.reset()` in `beforeEach()`
+- **Concurrent request tests** verify AsyncLocalStorage context isolation
 
 ### Test Pattern Example
 ```typescript

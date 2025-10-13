@@ -1,11 +1,13 @@
 import { Request, Response } from 'express';
 import { MenuService } from '../../services/MenuService';
+import { createLogger } from '../../utils/logger';
 
-const LOG_SOURCE = '[MenuController]';
+const logger = createLogger('MenuController');
 
 /**
  * Menu Controller - Handles HTTP requests for menu operations
  * Delegates business logic to MenuService using static methods
+ * Logger automatically includes requestId from AsyncLocalStorage context
  */
 export class MenuController {
   /**
@@ -13,7 +15,7 @@ export class MenuController {
    * Get all menu items
    */
   static getMenu(req: Request, res: Response): void {
-    req.log.info(`${LOG_SOURCE} GET /api/menu`);
+    logger.info('GET /api/menu');
     const result = MenuService.getMenu();
     res.status(result.success ? 200 : result.status || 500).json(result);
   }
@@ -24,7 +26,7 @@ export class MenuController {
    */
   static getMenuByCategory(req: Request, res: Response): void {
     const { categoryName } = req.params;
-    req.log.info(`${LOG_SOURCE} GET /api/menu/category/${categoryName}`);
+    logger.info(`GET /api/menu/category/${categoryName}`);
     const result = MenuService.getMenuByCategory(categoryName);
     res.status(result.success ? 200 : result.status || 500).json(result);
   }
@@ -35,7 +37,7 @@ export class MenuController {
    */
   static getMenuByType(req: Request, res: Response): void {
     const { foodType } = req.params;
-    req.log.info(`${LOG_SOURCE} GET /api/menu/type/${foodType}`);
+    logger.info(`GET /api/menu/type/${foodType}`);
     
     // Validate foodType
     if (foodType !== 'veg' && foodType !== 'non-veg') {
@@ -56,7 +58,7 @@ export class MenuController {
    */
   static searchMenu(req: Request, res: Response): void {
     const { q } = req.query;
-    req.log.info(`${LOG_SOURCE} GET /api/menu/search?q=${q}`);
+    logger.info(`GET /api/menu/search?q=${q}`);
     const result = MenuService.searchMenu(q as string);
     res.status(result.success ? 200 : result.status || 500).json(result);
   }
@@ -66,7 +68,7 @@ export class MenuController {
    * Get special menu items
    */
   static getSpecials(req: Request, res: Response): void {
-    req.log.info(`${LOG_SOURCE} GET /api/menu/specials`);
+    logger.info('GET /api/menu/specials');
     const result = MenuService.getSpecials();
     res.status(result.success ? 200 : result.status || 500).json(result);
   }
@@ -77,7 +79,7 @@ export class MenuController {
    */
   static getItemDetails(req: Request, res: Response): void {
     const { itemId } = req.params;
-    req.log.info(`${LOG_SOURCE} GET /api/menu/${itemId}`);
+    logger.info(`GET /api/menu/${itemId}`);
     const result = MenuService.getItemDetails(itemId);
     res.status(result.success ? 200 : result.status || 500).json(result);
   }

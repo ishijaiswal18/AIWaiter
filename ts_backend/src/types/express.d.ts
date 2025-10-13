@@ -1,25 +1,18 @@
 /**
  * Type augmentation for Express Request interface
  * 
- * Extends the Express Request object with custom properties:
- * - id: Unique identifier for request tracing
- * - log: Request-scoped Winston logger instance
+ * Note: We use AsyncLocalStorage for request context propagation.
+ * Request IDs and other context are stored in AsyncLocalStorage,
+ * not attached to the request object.
+ * 
+ * Use createLogger('SourceName') anywhere in the request lifecycle
+ * to automatically get the request context (requestId, source).
  */
 
-import { Logger } from 'winston';
+import 'express';
 
+// No request extensions needed - AsyncLocalStorage handles all context!
 declare module 'express-serve-static-core' {
-  interface Request {
-    /**
-     * Unique identifier for this request (UUID v4)
-     * Set by requestIdMiddleware
-     */
-    id: string;
-
-    /**
-     * Request-scoped Winston logger with requestId context
-     * Set by requestIdMiddleware
-     */
-    log: Logger;
-  }
+  // Empty interface extension to maintain module augmentation
+  interface Request {}
 }

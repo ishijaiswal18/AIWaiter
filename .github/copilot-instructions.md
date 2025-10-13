@@ -112,22 +112,26 @@ router.get('/', (req, res) => {
 router.get('/', validate(schema), MenuController.getMenu);
 
 // In Controller (static method)
-const LOG_SOURCE = '[MenuController]';
+const logger = createLogger('MenuController');
 static getMenu(req: Request, res: Response) {
-    req.log.info(`${LOG_SOURCE} GET /api/menu`);
+    logger.info('GET /api/menu');  // requestId automatically included via AsyncLocalStorage
     const result = MenuService.getMenu();
     res.status(result.success ? 200 : result.status || 500).json(result);
 }
 
 // In Service (static method)
-const LOG_SOURCE = '[MenuService]';
+const logger = createLogger('MenuService');
 static getMenu(): AppResponse<MenuItem[]> {
     const repository = RepositoryFactory.getMenuRepository();
+    logger.info('Retrieved all menu items');
     return { success: true, data: repository.getAll() };
 }
 ```
 
-**Key Pattern**: Only repositories use factory pattern (for Mock → Postgres swap). Services/controllers are stateless static methods.
+**Key Patterns**: 
+- Only repositories use factory pattern (for Mock → Postgres swap)
+- Services/controllers are stateless static methods
+- **Logging uses AsyncLocalStorage** - No `req.log` or `LOG_SOURCE` strings needed
 
 **Response Format**: All services return `AppResponse<T>` from `types/common.ts`:
 ```typescript
@@ -138,6 +142,48 @@ interface AppResponse<T = void> {
     status?: number;
 }
 ```
+
+## Logging Architecture (TypeScript Backend)
+
+### AsyncLocalStorage + Winston Pattern
+The TS backend uses **AsyncLocalStorage** for automatic request context propagation with zero request object modifications:
+
+**Key Benefits:**
+- ✅ No `req.log` or `req.id` attached to request object
+- ✅ Single pattern everywhere: `createLogger('SourceName')`
+- ✅ Automatic requestId propagation through entire request lifecycle
+- ✅ Concurrent request safe (verified with 50+ concurrent tests)
+- ✅ Clean Express types with no custom properties
+
+**Log Format:**
+```
+Console: [reqId:xxx] [source:MenuController]: GET /api/menu
+JSON:    { "level": "info", "requestId": "xxx", "source": "MenuController", "message": "GET /api/menu" }
+```
+
+**Usage Pattern:**
+```typescript
+// Top of any file (middleware, controller, service)
+import { createLogger } from '../utils/logger';
+const logger = createLogger('MenuController');
+
+// Use anywhere in that file - requestId automatically included!
+logger.info('Processing request');
+logger.error('Something failed', { error });
+```
+
+**How It Works:**
+1. `requestIdMiddleware` creates unique requestId and wraps `next()` in `requestContext.run()`
+2. AsyncLocalStorage automatically propagates context to all downstream code
+3. Controllers, services, middleware all use `createLogger('SourceName')`
+4. Winston child loggers automatically inject requestId from AsyncLocalStorage
+5. Each concurrent request gets isolated context - no bleeding
+
+**Source Names:**
+- Middleware: `RequestIdMiddleware`, `ValidationMiddleware`, `ErrorHandler`
+- Routes: `HealthCheck`
+- Controllers: `MenuController`, `OrderController`, `UserController`
+- Services: `MenuService`, `OrderService`, `UserService`
 
 ## LiveKit Integration
 
@@ -242,9 +288,10 @@ Edit `AIVoiceAgent/prompts/prompts.py` for personality/instructions. Current per
 
 ### Integration Tests
 `ts_backend/tests/api/` contains comprehensive integration tests using Jest + Supertest:
-- **33 tests** covering all endpoints (health, menu, order, user)
+- **37 tests** covering all endpoints (health, menu, order, user) + concurrent request scenarios
 - Tests run serially (`--runInBand`) to prevent race conditions
 - `beforeEach()` calls `RepositoryFactory.reset()` for test isolation
+- **Concurrent tests** verify AsyncLocalStorage context isolation (no request bleeding)
 - **Critical**: Static services/controllers use RepositoryFactory which provides fresh mock data
 
 ### Test Patterns

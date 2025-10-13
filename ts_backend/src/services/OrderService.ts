@@ -1,13 +1,14 @@
 import { Order, OrderItem, OrderStatus } from '../types/entities';
 import { AppResponse } from '../types/common';
 import { RepositoryFactory } from '../repositories/RepositoryFactory';
-import logger from '../utils/logger';
+import { createLogger } from '../utils/logger';
 
-const LOG_SOURCE = '[OrderService]';
+const logger = createLogger('OrderService');
 
 /**
  * Order Service - Business logic layer for order operations
  * Uses static methods for simplicity and RepositoryFactory for data access
+ * Logger automatically includes requestId from AsyncLocalStorage context
  */
 export class OrderService {
   /**
@@ -16,6 +17,7 @@ export class OrderService {
   static createOrder(userId: string, items: OrderItem[]): AppResponse<Order> {
     try {
       if (!userId || !items || !Array.isArray(items) || items.length === 0) {
+        logger.info(`Invalid order data for user: ${userId}`);
         return { 
           success: false, 
           message: 'Invalid order data', 
@@ -24,10 +26,11 @@ export class OrderService {
       }
       const repo = RepositoryFactory.getOrderRepository();
       const newOrder = repo.create(userId, items);
+      logger.info(`Created order ${newOrder.orderId} for user ${userId} with ${items.length} items`);
       return { success: true, data: newOrder, status: 201 };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error creating order for user ${userId}: ${error.message}`);
+      logger.error(`Error creating order for user ${userId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -38,6 +41,7 @@ export class OrderService {
   static updateOrder(orderId: string, items: OrderItem[]): AppResponse<Order> {
     try {
       if (!items || !Array.isArray(items) || items.length === 0) {
+        logger.info(`Invalid items data for update: ${orderId}`);
         return { 
           success: false, 
           message: 'Invalid items data for update', 
@@ -47,16 +51,18 @@ export class OrderService {
       const repo = RepositoryFactory.getOrderRepository();
       const updatedOrder = repo.update(orderId, items);
       if (!updatedOrder) {
+        logger.info(`Order not found: ${orderId}`);
         return { 
           success: false, 
           message: 'Order not found', 
           status: 404 
         };
       }
+      logger.info(`Updated order ${orderId} with ${items.length} items`);
       return { success: true, data: updatedOrder };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error updating order ${orderId}: ${error.message}`);
+      logger.error(`Error updating order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -69,16 +75,18 @@ export class OrderService {
       const repo = RepositoryFactory.getOrderRepository();
       const cancelled = repo.cancel(orderId);
       if (!cancelled) {
+        logger.info(`Order not found for cancellation: ${orderId}`);
         return { 
           success: false, 
           message: 'Order not found', 
           status: 404 
         };
       }
+      logger.info(`Cancelled order: ${orderId}`);
       return { success: true, status: 204 };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error cancelling order ${orderId}: ${error.message}`);
+      logger.error(`Error cancelling order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -91,16 +99,18 @@ export class OrderService {
       const repo = RepositoryFactory.getOrderRepository();
       const status = repo.getStatus(orderId);
       if (!status) {
+        logger.info(`Order not found: ${orderId}`);
         return { 
           success: false, 
           message: 'Order not found', 
           status: 404 
         };
       }
+      logger.info(`Retrieved status for order ${orderId}: ${status}`);
       return { success: true, data: status };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error getting status for order ${orderId}: ${error.message}`);
+      logger.error(`Error getting status for order ${orderId}: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
@@ -112,10 +122,11 @@ export class OrderService {
     try {
       const repo = RepositoryFactory.getOrderRepository();
       const orders = repo.getAll();
+      logger.info(`Retrieved ${orders.length} orders`);
       return { success: true, data: orders };
     } catch (err) {
       const error = err as Error;
-      logger.error(`${LOG_SOURCE} Error getting all orders: ${error.message}`);
+      logger.error(`Error getting all orders: ${error.message}`);
       return { success: false, message: 'Internal server error' };
     }
   }
