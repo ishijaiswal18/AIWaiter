@@ -2,45 +2,67 @@
 
 ## Architecture Overview
 
-AIWaiter is a voice-enabled restaurant ordering system with three main components:
+AIWaiter is a voice-enabled restaurant ordering system with four main components:
 
-1. **Backend** (`backend/`) - Node.js/Express API using **MVP architecture** (not MVC)
-2. **Frontend** (`frontend/`) - React + Vite with Chakra UI
-3. **AI Voice Agent** (`AIVoiceAgent/`) - Python LiveKit agent using Google Gemini Realtime API
+1. **Backend (JS)** (`backend/`) - Node.js/Express API using **MVP architecture** (Model-View-Presenter)
+2. **Backend (TS)** (`ts_backend/`) - TypeScript/Express API with **Repository Pattern** and dependency injection
+3. **Frontend** (`frontend/`) - React + Vite with Chakra UI
+4. **AI Voice Agent** (`AIVoiceAgent/`) - Python LiveKit agent using Google Gemini Realtime API
 
 ### Data Flow
-- Frontend ↔ Backend: REST API calls (`http://localhost:5000`)
+- Frontend ↔ Backend: REST API calls (`http://localhost:5000` for JS, `http://localhost:5001` for TS)
 - Frontend ↔ LiveKit: WebSocket connection for voice (`wss://ai-waiter-c5qys2gz.livekit.cloud`)
 - AI Agent ↔ Backend: HTTP calls to backend APIs via function tools
 - AI Agent ↔ Frontend: LiveKit data messages for commands (navigation, cart updates)
 
-## MVP Architecture (Backend)
+## Backend Architectures
 
-**Critical**: Backend uses **MVP (Model-View-Presenter)**, not MVC:
+### JS Backend (MVP Pattern)
+**Critical**: `backend/` uses **MVP (Model-View-Presenter)**, not MVC:
 
 - **Models** (`models/`) - Data layer with mock data and query functions (e.g., `menuItem.getAll()`)
 - **Views** (`views/`) - Express route handlers (e.g., `menuRoutes.js`)
 - **Presenters** (`presenters/`) - Business logic layer between views and models (e.g., `menuPresenter.js`)
 
-### Pattern Example
 ```javascript
-// View calls Presenter
+// View → Presenter → Model
 router.get('/', (req, res) => {
     const result = menuPresenter.getMenu();
     res.status(result.success ? 200 : result.status || 500).json(result);
 });
-
-// Presenter calls Model and formats response
-const getMenu = () => {
-    try {
-        return { success: true, data: menuItemModel.getAll() };
-    } catch (err) {
-        return { success: false, message: 'Internal server error' };
-    }
-};
 ```
 
 **Never bypass the Presenter layer** - always route requests through Views → Presenters → Models.
+
+### TypeScript Backend (Repository Pattern)
+`ts_backend/` uses modern TypeScript with **Repository Pattern** and **Dependency Injection**:
+
+- **Repositories** (`src/repositories/`) - Data access layer with interfaces and mock implementations
+- **Services** (`src/services/`) - Business logic layer using `AppResponse<T>` standardized responses
+- **Controllers** (`src/api/controllers/`) - HTTP request handling
+- **Routes** (`src/api/routes/`) - Route definitions with Zod validation middleware
+
+```typescript
+// Route → Controller → Service → Repository
+// Services are instantiated per-request to support test isolation
+router.get('/', validate(schema), (req, res) => {
+    const service = new MenuService(RepositoryFactory.getMenuRepository(), logger);
+    const controller = new MenuController(service);
+    controller.getMenu(req, res);
+});
+```
+
+**Key Pattern**: Services created per-request (not singleton) to enable `RepositoryFactory.reset()` in tests.
+
+**Response Format**: All services return `AppResponse<T>` from `types/common.ts`:
+```typescript
+interface AppResponse<T = void> {
+    success: boolean;
+    data?: T;
+    message?: string;
+    status?: number;
+}
+```
 
 ## LiveKit Integration
 
@@ -74,8 +96,9 @@ newRoom.on(RoomEvent.DataReceived, (payload, participant) => {
 **Order matters** - backend must be running before agent:
 
 ```powershell
-# Terminal 1 - Backend
-cd backend; npm install; npm start
+# Terminal 1 - Backend (choose one)
+cd backend; npm install; npm start           # JS backend on port 5000
+cd ts_backend; npm install; npm run dev      # TS backend on port 5001
 
 # Terminal 2 - Frontend  
 cd frontend; npm install; npm run dev
@@ -84,8 +107,19 @@ cd frontend; npm install; npm run dev
 cd AIVoiceAgent; python -m venv venv; .\venv\Scripts\activate; pip install -r requirements.txt; python main.py --room my-agent-room
 ```
 
+### TypeScript Backend Commands
+```powershell
+cd ts_backend
+npm run dev          # Development with hot reload (ts-node-dev --files)
+npm run build        # Compile TypeScript to dist/
+npm start            # Run compiled JavaScript from dist/
+npm test             # Run Jest tests (--runInBand for serial execution)
+npm run test:watch   # Watch mode for tests
+npm run test:coverage # Generate coverage report
+```
+
 ### Environment Variables Required
-- **Backend**: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `PORT` (default 5000)
+- **Backend (JS/TS)**: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `PORT` (5000 for JS, 5001 for TS)
 - **AI Agent**: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_API_KEY`
 - Frontend hardcodes LiveKit URL in `useLiveKit.js` (line 6)
 
@@ -129,15 +163,47 @@ Edit `AIVoiceAgent/prompts/prompts.py` for personality/instructions. Current per
 2. Add to `VoiceAgent.__init__()` tools list in `agents/voice_agent.py`
 3. Document expected JSON format in docstring for LLM
 
+## Testing (TypeScript Backend)
+
+### Integration Tests
+`ts_backend/tests/api/` contains comprehensive integration tests using Jest + Supertest:
+- **33 tests** covering all endpoints (health, menu, order, user)
+- Tests run serially (`--runInBand`) to prevent race conditions
+- `beforeEach()` calls `RepositoryFactory.reset()` for test isolation
+- **Critical**: Services created per-request (not cached) so tests get fresh repositories
+
+### Test Patterns
+```typescript
+describe('Menu API', () => {
+  beforeEach(() => {
+    RepositoryFactory.reset(); // Fresh data for each test
+  });
+
+  it('should return all menu items', async () => {
+    const response = await request(app).get('/api/menu');
+    expect(response.status).toBe(200);
+    expect(response.body.success).toBe(true);
+  });
+});
+```
+
+**Important**: HTTP 204 (No Content) responses have empty body - don't check `response.body.success`.
+
 ## Critical Files
-- `backend/app.js` - Express app setup, LiveKit token endpoint
+- `backend/app.js` - JS backend Express app setup, LiveKit token endpoint
+- `ts_backend/src/app.ts` - TS backend Express app with middleware chain
+- `ts_backend/src/repositories/RepositoryFactory.ts` - Singleton factory with reset() for tests
+- `ts_backend/src/types/common.ts` - AppResponse<T> standardized response type
+- `ts_backend/jest.config.js` - Jest configuration with ts-jest
 - `frontend/src/hooks/useLiveKit.js` - Complete LiveKit integration logic
 - `AIVoiceAgent/main.py` - Agent entrypoint with backend health check
 - `AIVoiceAgent/agents/voice_agent.py` - Agent class with Gemini Realtime model
-- `backend/utils/config.js` - Environment variable loading
 
 ## Common Pitfalls
-- Don't use MVC terminology - it's MVP (Presenter, not Controller)
+- **JS Backend**: Don't use MVC terminology - it's MVP (Presenter, not Controller)
+- **TS Backend**: Don't cache service instances at router creation - create per-request for test isolation
+- **Testing**: Always use `--runInBand` to prevent parallel test race conditions
+- **TypeScript**: Include `tests/**/*` in tsconfig.json for VS Code IntelliSense
 - Always check backend health before starting agent (`main.py` does this)
 - Audio issues? Frontend needs user interaction to play audio (browser autoplay policies)
 - Agent tools must return strings, not raw response objects

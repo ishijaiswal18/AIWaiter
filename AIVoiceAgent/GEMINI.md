@@ -1,138 +1,74 @@
-# AI Voice Agent Project
+# AI Voice Agent Documentation
 
-This document outlines the architecture, setup, and learnings from building a LiveKit-based AI voice agent.
+This document provides a detailed overview of the AI Voice Agent, including its architecture, setup, and integration with the Gemini Realtime LLM.
 
 ## Architecture
 
-The project is structured to be modular and maintainable, inspired by the `TuesdayAgent` example.
+The AI Voice Agent is built with Python using the `livekit-agents` framework. It's designed to be modular and extensible.
 
--   `agents/`: Contains the agent classes. `voice_agent.py` defines the `VoiceAgent` class, which encapsulates the core logic of the voice agent.
--   `prompts/`: Stores system and user prompt templates. `prompts.py` contains the system prompt as a Python variable.
--   `utils/`: Contains utility functions. `config.py` handles loading configuration from environment variables.
--   `main.py`: The main entry point for the application. It initializes and runs the agent.
--   `requirements.txt`: Lists the project dependencies.
--   `GEMINI.md`: This file, containing documentation about the project.
+-   **`agents/`**: Contains the `VoiceAgent` class, which is the core of the agent. It initializes the agent, loads the system prompt, and defines the tools the agent can use.
+-   **`prompts/`**: Stores the system prompt for the Gemini LLM. The prompt defines the agent's personality and capabilities.
+-   **`tools/`**: Contains the function tools that the agent can use to interact with the backend API.
+-   **`utils/`**: Contains utility functions, such as the configuration loader.
+-   **`main.py`**: The entry point for the agent. It initializes the agent and connects to the LiveKit room.
 
-## Setup & Run Steps
+## Setup & Run
 
-**1. Create a virtual environment:**
-```bash
-python -m venv venv
-```
+1.  **Create a virtual environment:**
+    ```bash
+    python -m venv venv
+    ```
 
-**2. Activate the virtual environment:**
-```bash
-venv\Scripts\activate
-```
+2.  **Activate the virtual environment:**
+    ```bash
+    venv\Scripts\activate
+    ```
 
-**3. Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-**4. Set up environment variables:**
-Create a `.env` file in the project root and add the following variables:
-```
-LIVEKIT_URL=your_livekit_url
-LIVEKIT_API_KEY=your_api_key
-LIVEKIT_API_SECRET=your_api_secret
-GOOGLE_APPLICATION_CREDENTIALS=path/to/your/google/credentials.json
-GOOGLE_API_KEY=your_google_api_key
-```
+4.  **Set up environment variables:**
+    Create a `.env` file in the `AIVoiceAgent` directory and add the following variables:
+    ```
+    LIVEKIT_URL=your_livekit_url
+    LIVEKIT_API_KEY=your_api_key
+    LIVEKIT_API_SECRET=your_api_secret
+    GOOGLE_APPLICATION_CREDENTIALS=path/to/your/google/credentials.json
+    GOOGLE_API_KEY=your_google_api_key
+    ```
 
-**5. Run the agent:**
-```bash
-python main.py --room my-agent-room
-```
+5.  **Run the agent:**
+    ```bash
+    python main.py --room my-agent-room
+    ```
 
-## Prompt Structure
+## Gemini Realtime LLM Integration
 
-The system prompt for the Gemini LLM is now defined as a Python variable in `prompts/prompts.py`. This approach allows for more structured prompt management and potential for multiple prompts.
+The agent uses the `livekit.plugins.google.LLM()` to directly integrate with the Gemini Realtime LLM. This allows for a seamless voice interaction, where the agent can listen and respond in real-time.
 
-Example `prompts/prompts.py`:
-```python
-SYSTEM_PROMPT = """
-You are a polite and helpful waiter at a traditional Indian restaurant. Greet customers warmly with "Namaste!" or "Aadab!". Speak in a respectful and friendly tone. You can answer questions about our authentic Indian menu, recommend daily specials, take food orders, and confirm them. Use phrases like "ji" or "sahib/madam" appropriately when addressing customers.
-"""
-```
+-   The `AgentSession` is initialized with `llm=google.LLM()`.
+-   LiveKit handles the audio streaming between the user and the Gemini model.
+-   The `VoiceAgent` is initialized with a system prompt that guides the model's behavior.
 
-## How the Realtime Gemini Model is Being Used
+## Function Tools
 
-Instead of separate STT (Speech-to-Text) and TTS (Text-to-Speech) pipelines, this agent directly integrates with the Gemini Realtime LLM model via `livekit.plugins.google.LLM()`.
+The agent uses function tools to interact with the backend API. These tools are defined in `tools/tools.py` and are decorated with `@tool()`.
 
--   The `AgentSession` is initialized with `llm=google.LLM()`. This tells LiveKit to use the Gemini Realtime model for all voice interactions.
--   LiveKit handles the bi-directional audio streaming, sending user audio to Gemini for transcription and receiving synthesized speech from Gemini for playback.
--   The `VoiceAgent` class is initialized with the system prompt, which guides the Gemini model's behavior.
+-   `get_menu()`: Fetches the full menu from the backend.
+-   `get_specials()`: Fetches the daily specials from the backend.
+-   `place_order(order_details)`: Places a new order.
+-   `get_order_status(order_id)`: Retrieves the status of an order.
 
-## Differences from TuesdayAgent
+## Customization
 
--   **Prompt Management:** This agent now manages prompts in `prompts/prompts.py` as Python variables, similar to `TuesdayAgent`.
--   **Gemini Realtime LLM:** This agent explicitly uses the `livekit.plugins.google.LLM()` for real-time voice interaction with Gemini, rather than separate STT/TTS components.
--   **Simplified Agent Logic:** The `VoiceAgent` class is simpler as the `AgentSession` and `google.LLM()` handle the complex audio processing and LLM interaction.
+### Modifying Agent Behavior
 
-## Learnings
+To modify the agent's personality and instructions, edit the `SYSTEM_PROMPT` variable in `prompts/prompts.py`.
 
--   The `livekit-agents` framework provides a powerful abstraction for building voice agents, especially when integrating with real-time LLMs like Gemini.
--   Proper prompt engineering is crucial for guiding the LLM's behavior.
--   Modular design (separating concerns into `agents/`, `prompts/`, `utils/`) significantly improves code readability and maintainability.
+### Adding New Tools
 
-## Frontend Integration
-
-The AI agent is integrated into a ReactJS frontend using Chakra UI. The integration is handled by a `useLiveKit` hook and a `VoiceAssistant` component.
-
-### `useLiveKit` Hook
-
-The `useLiveKit` hook (`frontend/src/hooks/useLiveKit.js`) encapsulates all the logic for interacting with the LiveKit room. It handles:
-
-- **Token Generation:** Fetches an access token from the backend.
-- **Room Connection:** Connects to the LiveKit room using the generated token.
-- **Audio Publishing:** Publishes the user's microphone audio to the room.
-- **Event Handling:** Listens for incoming audio tracks and data messages from the agent.
-- **Command Handling:** Parses commands from the agent and triggers corresponding actions in the frontend (e.g., navigation, adding items to the cart).
-- **Error Handling:** Uses Chakra UI's `useToast` to display error messages.
-
-### `VoiceAssistant` Component
-
-The `VoiceAssistant` component (`frontend/src/components/VoiceAssistant.jsx`) provides the user interface for voice interaction. It features:
-
-- A floating microphone button that initiates the voice session.
-- A modal that displays the conversation history using `ChatBubble` components.
-- A button to start and stop recording the user's voice.
-- An audio element to play the agent's voice responses.
-
-### State Synchronization
-
-The frontend state (e.g., the shopping cart) is synchronized with the AI agent through the `useLiveKit` hook. The hook receives the `cart` context and calls the appropriate functions (`addToCart`, etc.) when it receives commands from the agent.
-
-This setup creates a seamless experience where the user can interact with the AI agent through both voice and the UI, with the agent driving the frontend application flow.
-
-## Backend Health Check
-
-Before the agent is started, a health check is performed to ensure that the backend server is running and available. This is done by sending a `GET` request to the `/health` endpoint. If the backend is not available, the application will exit with an error message.
-
-## Past Mistakes Avoided
-
--   **Incorrect LLM Usage:** Previously, I attempted to use separate STT/TTS components, which is not the correct way to leverage the Gemini Realtime voice model. This version directly integrates the Gemini LLM.
--   **Missing Prompt:** The previous version lacked a system prompt, which is essential for guiding the LLM's responses. This version explicitly defines and loads a system prompt.
--   **Monolithic Script:** The previous version was a single monolithic script. This version uses a modular structure with separate files for agents, prompts, and utilities.
-
-## Asynchronous Operations with Tools
-
-When building tools for a `livekit-agent`, it's crucial to use asynchronous libraries for any I/O operations, such as making HTTP requests. The `livekit-agents` framework is built on Python's `asyncio`, and using synchronous (blocking) libraries like `requests` will block the agent's event loop. This would make the agent unresponsive and unable to process audio or other events in real-time.
-
-For making HTTP requests, the recommended library is `aiohttp`. This library is asynchronous and integrates seamlessly with the `asyncio` event loop used by `livekit-agents`.
-
-**Example:**
-
-```python
-import aiohttp
-from livekit.agents.tools import tool
-
-@tool()
-async def get_data():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.example.com/data') as response:
-            return await response.text()
-```
-
-This ensures that the agent remains responsive while waiting for the HTTP request to complete.
+1.  Create an `async` function in `tools/tools.py` with the `@tool()` decorator.
+2.  Add the new tool to the `tools` list in the `VoiceAgent`'s `__init__` method in `agents/voice_agent.py`.
+3.  Provide a clear docstring for the tool, explaining what it does and what parameters it expects. This will help the LLM understand how to use the tool.

@@ -34,7 +34,7 @@ This repository contains the code for the AIWaiter application, which includes a
 │   ├── main.py
 │   ├── requirements.txt
 │   └── GEMINI.md
-├── backend/                 # Node.js/Express Backend (MVP Architecture)
+├── backend/                  # Node.js/Express Backend (MVP Architecture)
 │   ├── models/
 │   ├── views/
 │   ├── presenters/
@@ -42,8 +42,20 @@ This repository contains the code for the AIWaiter application, which includes a
 │   ├── app.js
 │   ├── server.js
 │   ├── package.json
-│   └── README.md
-└── frontend/                # React Frontend (Restaurant Ordering System)
+│   └── GEMINI.md
+├── ts_backend/               # TypeScript/Express Backend (Repository Pattern)
+│   ├── src/
+│   │   ├── api/              # Controllers and routes
+│   │   ├── repositories/     # Data access layer
+│   │   ├── services/         # Business logic
+│   │   ├── middleware/       # Request processing
+│   │   ├── types/            # TypeScript types
+│   │   └── utils/            # Utilities
+│   ├── tests/                # Integration tests (Jest + Supertest)
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── GEMINI.md
+└── frontend/                 # React Frontend (Restaurant Ordering System)
     ├── public/
     ├── src/
     │   ├── components/
@@ -54,32 +66,42 @@ This repository contains the code for the AIWaiter application, which includes a
     │   ├── App.jsx
     │   └── index.js
     ├── package.json
-    └── README.md
+    └── GEMINI.md
 ```
 
 ## Setup and Running the Application
 
-To run the full AIWaiter application, you need to set up and run both the backend and the frontend, and the AI Voice Agent.
+To run the full AIWaiter application, you need to set up and run the backend, frontend, and AI Voice Agent.
 
-### 1. Backend Setup
+### 1. Backend Setup (Choose One)
 
-Navigate to the `backend` directory and follow its `README.md` instructions.
-
+**Option A: JavaScript Backend (MVP Architecture)**
 ```bash
 cd backend
 npm install
-# Create .env file with LIVEKIT_API_KEY, LIVEKIT_API_SECRET, PORT
+# Create .env file with LIVEKIT_API_KEY, LIVEKIT_API_SECRET, PORT=5000
 npm start
+```
+
+**Option B: TypeScript Backend (Repository Pattern) - Recommended**
+```bash
+cd ts_backend
+npm install
+# Create .env file with LIVEKIT_API_KEY, LIVEKIT_API_SECRET, PORT=5001
+npm run dev      # Development with hot reload
+# OR
+npm run build    # Production build
+npm start        # Run compiled code
 ```
 
 ### 2. Frontend Setup
 
-Navigate to the `frontend` directory and follow its `README.md` instructions.
+Navigate to the `frontend` directory and follow its `GEMINI.md` instructions.
 
 ```bash
 cd frontend
 npm install
-npm start
+npm run dev
 ```
 
 ### 3. AI Voice Agent Setup
@@ -89,7 +111,8 @@ Navigate to the `AIVoiceAgent` directory and follow its `GEMINI.md` instructions
 ```bash
 cd AIVoiceAgent
 python -m venv venv
-venc\Scripts\activate
+venv\Scripts\activate       # Windows
+# source venv/bin/activate  # Mac/Linux
 pip install -r requirements.txt
 # Create .env file with LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET, GOOGLE_APPLICATION_CREDENTIALS, GOOGLE_API_KEY
 python main.py --room my-agent-room
@@ -109,13 +132,25 @@ python main.py --room my-agent-room
 
 ### Backend
 
-*   MVP architecture for modularity.
-*   APIs for:
-    *   Menu (get all, by category, by type, search, specials, item details)
-    *   Orders (create, update, cancel, get status)
-    *   User Favorites (get, add, remove)
-    *   Calling Human Waiter
-    *   LiveKit Token Generation
+**JavaScript Backend (`backend/`)**
+*   MVP (Model-View-Presenter) architecture for modularity
+*   Mock data storage
+*   Port: 5000
+
+**TypeScript Backend (`ts_backend/`)** ⭐ Recommended
+*   Repository Pattern with Dependency Injection
+*   Strict TypeScript with full type safety
+*   Zod validation for all endpoints
+*   Comprehensive testing (33 integration tests with Jest + Supertest)
+*   Request-scoped logging with Winston
+*   Port: 5001
+
+**Both backends provide APIs for:**
+*   Menu (get all, by category, by type, search, specials, item details)
+*   Orders (create, update, cancel, get status)
+*   User Favorites (get, add, remove)
+*   Calling Human Waiter
+*   LiveKit Token Generation
 
 ### AI Voice Agent
 
