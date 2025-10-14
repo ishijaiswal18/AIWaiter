@@ -98,3 +98,14 @@ export const callWaiterSchema = z.object({
     message: z.string().optional(),
   }),
 });
+
+// ============================================
+// LiveKit Validation Schemas
+// ============================================
+
+export const tokenRequestSchema = z.object({
+  body: z.object({
+    roomName: z.string().min(1, 'Room name is required'),
+    participantName: z.string().min(1, 'Participant name is required'),
+  }),
+});

@@ -187,10 +187,62 @@ logger.error('Something failed', { error });
 
 ## LiveKit Integration
 
-### Token Generation Flow
-1. Frontend requests token via `POST /get-token` with `{ roomName, participantName }`
-2. Backend generates JWT using `livekit-server-sdk` AccessToken
-3. Frontend connects to LiveKit room with token
+### Token Generation Flow (TypeScript Backend)
+1. Frontend requests token via `POST /api/get-token` with `{ roomName, participantName }`
+2. **Validation**: Zod middleware validates request body using `tokenRequestSchema`
+3. **Controller**: `LiveKitController.getToken()` extracts parameters and calls service
+4. **Service**: `LiveKitService.generateToken()` creates JWT using `livekit-server-sdk` AccessToken
+5. Frontend connects to LiveKit room with token
+
+**Endpoint**: `POST /api/get-token` (TS backend on port 5001)  
+**JS Backend**: `POST /get-token` (JS backend on port 5000, no `/api` prefix)
+
+**TypeScript Implementation Pattern**:
+```typescript
+// Route → Static Controller → Static Service → livekit-server-sdk
+router.post('/get-token', validate(tokenRequestSchema), LiveKitController.getToken);
+
+// Controller (static method)
+static async getToken(req: Request, res: Response) {
+    const { roomName, participantName } = req.body;
+    const result = await LiveKitService.generateToken(roomName, participantName);
+    res.status(result.success ? 200 : 500).json(result);
+}
+
+// Service (static method)
+static async generateToken(roomName: string, participantName: string): Promise<AppResponse<{ token: string }>> {
+    const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET);
+    token.identity = participantName;
+    token.addGrant({ room: roomName, roomJoin: true, canPublish: true, canSubscribe: true });
+    return { success: true, data: { token: await token.toJwt() } };
+}
+```
+
+**JWT Structure**: `header.payload.signature` with claims:
+- `sub`: participant identity
+- `video.room`: room name
+- `video.roomJoin/canPublish/canSubscribe`: permissions
+- `iss`: LIVEKIT_API_KEY
+- `exp/nbf`: expiration times
+
+**Testing Pattern**:
+```typescript
+beforeEach(() => {
+    // Mock credentials - livekit-server-sdk generates JWTs locally
+    process.env.LIVEKIT_API_KEY = 'test-api-key';
+    process.env.LIVEKIT_API_SECRET = 'test-api-secret';
+});
+
+// JWT validation test - decode payload and verify claims
+const parts = token.split('.');
+const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+expect(payload.sub).toBe('test-participant');
+expect(payload.video.room).toBe('test-room');
+```
+
+**Environment Variables Required**:
+- `LIVEKIT_API_KEY` - API key from LiveKit dashboard
+- `LIVEKIT_API_SECRET` - Secret for JWT signing (keep secure!)
 
 ### Voice Agent Function Tools
 The Python agent uses `@function_tool()` decorated async functions in `AIVoiceAgent/tools/tools.py`:
@@ -316,9 +368,15 @@ describe('Menu API', () => {
 ## Critical Files
 - `backend/app.js` - JS backend Express app setup, LiveKit token endpoint
 - `ts_backend/src/app.ts` - TS backend Express app with middleware chain
+- `ts_backend/src/services/LiveKitService.ts` - JWT token generation with livekit-server-sdk
+- `ts_backend/src/api/controllers/LiveKitController.ts` - LiveKit token endpoint handler
+- `ts_backend/src/api/routes/livekitRoutes.ts` - POST /api/get-token endpoint definition
 - `ts_backend/src/repositories/RepositoryFactory.ts` - Repository factory with reset() for tests
 - `ts_backend/src/types/common.ts` - AppResponse<T> standardized response type
+- `ts_backend/src/types/validationSchemas.ts` - Zod schemas including tokenRequestSchema
+- `ts_backend/src/utils/logger.ts` - Winston logger with AsyncLocalStorage context
 - `ts_backend/jest.config.js` - Jest configuration with ts-jest
+- `ts_backend/tests/api/livekit.test.ts` - 12 integration tests with JWT validation
 - `frontend/src/hooks/useLiveKit.js` - Complete LiveKit integration logic
 - `AIVoiceAgent/main.py` - Agent entrypoint with backend health check
 - `AIVoiceAgent/agents/voice_agent.py` - Agent class with Gemini Realtime model
@@ -328,6 +386,9 @@ describe('Menu API', () => {
 - **TS Backend**: Always use RepositoryFactory for repositories - services/controllers are static methods
 - **Testing**: Always use `--runInBand` to prevent parallel test race conditions
 - **TypeScript**: Include `tests/**/*` in tsconfig.json for VS Code IntelliSense
+- **LiveKit Testing**: Tests mock `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in `beforeEach()` - no real credentials needed
+- **LiveKit Endpoint**: TS backend uses `/api/get-token`, JS backend uses `/get-token` (no `/api` prefix)
+- **JWT Validation**: Use `Buffer.from(parts[1], 'base64')` to decode JWT payload for testing
 - Always check backend health before starting agent (`main.py` does this)
 - Audio issues? Frontend needs user interaction to play audio (browser autoplay policies)
 - Agent tools must return strings, not raw response objects

@@ -4,3 +4,4 @@
 export { MenuService } from './MenuService';
 export { OrderService } from './OrderService';
 export { UserService } from './UserService';
+export { LiveKitService } from './LiveKitService';
