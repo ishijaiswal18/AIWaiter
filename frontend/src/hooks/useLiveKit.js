@@ -1,22 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Room, RoomEvent, RemoteAudioTrack, createLocalAudioTrack } from 'livekit-client';
 import { useNavigate } from 'react-router-dom';
 
+// Prefer using env var VITE_LIVEKIT_TOKEN_URL, fallback to JS backend on 5000
+const TOKEN_URL = 'http://localhost:5000/get-token';
 const LIVEKIT_URL = 'wss://ai-waiter-c5qys2gz.livekit.cloud';
 
 export const useLiveKit = (cart, toast) => {
-  const [room, setRoom] = useState(null);
+  const [roomState, setRoomState] = useState(null);
   const [messages, setMessages] = useState([]);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [localTrack, setLocalTrack] = useState(null);
   const [remoteTrack, setRemoteTrack] = useState(null);
   const navigate = useNavigate();
-  const [newRoom] = useState(new Room());
+  const roomRef = useRef(null);
 
   const getToken = useCallback(async (roomName, participantName) => {
     try {
-      const response = await fetch('http://localhost:5000/get-token', {
+      const response = await fetch(TOKEN_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -24,16 +26,19 @@ export const useLiveKit = (cart, toast) => {
         body: JSON.stringify({ roomName, participantName }),
       });
       if (!response.ok) {
-        throw new Error('Failed to fetch token');
+        const text = await response.text().catch(() => '');
+        throw new Error(`Token endpoint returned ${response.status}: ${text}`);
       }
-      const { token } = await response.json();
-      return token;
+      const data = await response.json().catch(() => null);
+      if (!data || !data.token) throw new Error('Token not present in response');
+      return data.token;
     } catch (error) {
+      console.error('[LiveKit] Error fetching token', error);
       toast({
         title: 'Error fetching token',
         description: error.message,
         status: 'error',
-        duration: 5000,
+        duration: 8000,
         isClosable: true,
       });
       return null;
@@ -51,16 +56,21 @@ export const useLiveKit = (cart, toast) => {
     }
   }, [navigate, cart]);
 
-  const connectToRoom = useCallback(async (roomName, participantName) => {
+  const connectToRoom = useCallback(async (roomName = 'lobby', participantName = `guest_${Math.floor(Math.random()*10000)}`) => {
     setIsConnecting(true);
     try {
+      console.log('[LiveKit] requesting token for', { roomName, participantName });
       const token = await getToken(roomName, participantName);
       if (!token) return;
 
-      await newRoom.connect(LIVEKIT_URL, token);
-      setRoom(newRoom);
+      // create Room instance once
+      if (!roomRef.current) roomRef.current = new Room();
+      const r = roomRef.current;
 
-      newRoom.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+      await r.connect(LIVEKIT_URL, token);
+      setRoomState(r);
+
+      r.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
         console.log('[AUDIO DEBUG] track subscribed', {
           participant: participant.identity,
           trackSid: publication.trackSid,
@@ -87,7 +97,7 @@ export const useLiveKit = (cart, toast) => {
         }
       });
 
-      newRoom.on(RoomEvent.DataReceived, (payload, participant) => {
+      r.on(RoomEvent.DataReceived, (payload, participant) => {
         const decoder = new TextDecoder();
         const messageStr = decoder.decode(payload);
         try {
@@ -97,8 +107,9 @@ export const useLiveKit = (cart, toast) => {
           } else {
             setMessages((prev) => [...prev, { text: message.text, sender: participant.identity }]);
           }
-        } catch (error) {
-            setMessages((prev) => [...prev, { text: messageStr, sender: participant.identity }]);
+        } catch (err) {
+          console.warn('[LiveKit] failed to parse data message', { err, messageStr });
+          setMessages((prev) => [...prev, { text: messageStr, sender: participant.identity }]);
         }
       });
 
@@ -114,11 +125,12 @@ export const useLiveKit = (cart, toast) => {
     } finally {
       setIsConnecting(false);
     }
-  }, [getToken, handleCommand, toast, newRoom]);
+  }, [getToken, handleCommand, toast]);
 
   const startRecording = useCallback(async () => {
     console.log('[AUDIO DEBUG] Start clicked');
-    if (room) {
+    const r = roomRef.current;
+    if (r) {
       try {
         const localAudioTrack = await createLocalAudioTrack();
         if (!localAudioTrack.mediaStreamTrack) {
@@ -130,14 +142,33 @@ export const useLiveKit = (cart, toast) => {
           enabled: localAudioTrack.mediaStreamTrack.enabled,
           readyState: localAudioTrack.mediaStreamTrack.readyState,
         });
-        console.log('[AUDIO DEBUG] localParticipant', room.localParticipant);
-        await room.localParticipant.publishTrack(localAudioTrack);
+        console.log('[AUDIO DEBUG] localParticipant', r.localParticipant);
+        // publish on the room reference
+        await r.localParticipant.publishTrack(localAudioTrack);
+        // Helper: safely extract publications from a participant-like object
+        const getParticipantPublications = (participant) => {
+          let pubs = [];
+          try {
+            const audioTracksMap = participant?.audioTracks;
+            if (audioTracksMap && typeof audioTracksMap.values === 'function') {
+              pubs = Array.from(audioTracksMap.values());
+            } else if (participant?.tracks && typeof participant.tracks[Symbol.iterator] === 'function') {
+              // participant.tracks may be a Map or array-like [key, value]
+              pubs = Array.from(participant.tracks).map((t) => t[1] || t);
+            }
+          } catch (err) {
+            console.warn('[AUDIO DEBUG] could not read publications from participant', err, participant);
+          }
+          return pubs;
+        };
+
+        const publicationsArr = getParticipantPublications(r.localParticipant);
         console.log('[AUDIO DEBUG] publish result', {
-          publications: Array.from(room.localParticipant.audioTracks.values()).map((p) => ({
-            id: p.trackSid || p.track?.id || p.sid,
-            kind: p.track?.kind,
-            muted: p.muted,
-            subscribed: p.isSubscribed,
+          publications: publicationsArr.map((p) => ({
+            id: p?.trackSid || p?.track?.id || p?.sid,
+            kind: p?.track?.kind,
+            muted: p?.muted,
+            subscribed: p?.isSubscribed,
           })),
         });
         setLocalTrack(localAudioTrack);
@@ -153,19 +184,26 @@ export const useLiveKit = (cart, toast) => {
           isClosable: true,
         });
       }
+    } else {
+      toast({ title: 'Not connected to room', description: 'Connect to a LiveKit room first', status: 'warning', duration: 4000 });
     }
-  }, [room, toast]);
+  }, [toast]);
 
   const stopRecording = useCallback(async () => {
     console.log('[AUDIO DEBUG] Stop clicked');
-    if (room && localTrack) {
-      room.localParticipant.unpublishTrack(localTrack);
-      localTrack.stop();
+    const r = roomRef.current;
+    if (r && localTrack) {
+      try {
+        r.localParticipant.unpublishTrack(localTrack);
+        localTrack.stop();
+      } catch (err) {
+        console.warn('[AUDIO DEBUG] error unpublishing/stopping local track', err);
+      }
       setLocalTrack(null);
       setIsRecording(false);
       toast({ title: 'Mic Off', status: 'info', duration: 2000 });
       console.log('[AUDIO DEBUG] unpublish result', {
-        publications: Array.from(room.localParticipant.tracks).map((p) => ({
+        publications: Array.from(r.localParticipant.tracks).map((p) => ({
           id: p.trackSid || p.track?.id || p.sid,
           kind: p.track?.kind,
           muted: p.muted,
@@ -173,24 +211,26 @@ export const useLiveKit = (cart, toast) => {
         })),
       });
     }
-  }, [room, localTrack, toast]);
+  }, [localTrack, toast]);
 
   const sendMessage = useCallback(async (message) => {
-    if (room) {
+    const r = roomRef.current;
+    if (r) {
       const encoder = new TextEncoder();
       const payload = encoder.encode(message);
-      await room.localParticipant.publishData(payload, { reliable: true });
+      await r.localParticipant.publishData(payload, { reliable: true });
       setMessages((prev) => [...prev, { text: message, sender: 'user' }]);
     }
-  }, [room]);
+  }, []);
 
   useEffect(() => {
     return () => {
-      if (room) {
-        room.disconnect();
+      const r = roomRef.current;
+      if (r) {
+        try { r.disconnect(); } catch (err) { console.warn('Error disconnecting room', err); }
       }
     };
-  }, [room]);
+  }, []);
 
-  return { room, connectToRoom, startRecording, stopRecording, sendMessage, messages, isConnecting, isRecording, remoteTrack };
+  return { room: roomState, connectToRoom, startRecording, stopRecording, sendMessage, messages, isConnecting, isRecording, remoteTrack };
 };

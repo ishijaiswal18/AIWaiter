@@ -87,7 +87,7 @@ npm start
 ```bash
 cd ts_backend
 npm install
-# Create .env file with LIVEKIT_API_KEY, LIVEKIT_API_SECRET, PORT=5001
+# Create .env file with LIVEKIT_API_KEY, LIVEKIT_API_SECRET, PORT=5000
 npm run dev      # Development with hot reload
 # OR
 npm run build    # Production build
@@ -143,7 +143,7 @@ python main.py --room my-agent-room
 *   Zod validation for all endpoints
 *   Comprehensive testing (33 integration tests with Jest + Supertest)
 *   Request-scoped logging with Winston
-*   Port: 5001
+*   Port: 5000
 
 **Both backends provide APIs for:**
 *   Menu (get all, by category, by type, search, specials, item details)
