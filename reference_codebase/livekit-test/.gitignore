@@ -1,0 +1,40 @@
+# Virtual environment
+env/
+
+# All nested python bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyd
+**/*.pyo
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Operating System files
+.DS_Store
+Thumbs.db
+
+# Dependency management
+pip-wheel-metadata/
+*.egg-info/
+
+# Test/coverage
+.pytest_cache/
+.coverage
+
+# Logs
+*.log
+
+# Environment variables
+*.env
+
+# Build artifacts
+dist/
+build/
+
+# LiveKit specific
+livekit-interviewer/
+# tuesday/

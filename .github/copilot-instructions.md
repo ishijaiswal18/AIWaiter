@@ -1,3 +1,139 @@
+## AIWaiter — Copilot instructions (concise)
+
+Purpose: give AI coding agents a short, actionable reference for this repository: architecture, conventions, critical commands, and key files.
+
+Product overview: We are building a restaurant management application (AIWaiter) that manages inventory, staff, billing, orders, and table/dine-in workflows. A central feature is an AI voice assistant (the "waiter") that can talk to customers, take orders, suggest dishes, and interact with the frontend via LiveKit; the rest of the system provides APIs for inventory, billing, and staff management.
+
+Developer persona & supported flows
+  - Primary goal: help developers understand how the AI waiter should behave so features, tools, and prompts align with product needs.
+  - Core user flows for the agent (implement these first):
+    1. Greet & onboard: brief greeting, ask number of guests, dietary preferences, and seating choice.
+    2. Menu discovery & suggestion: suggest categories, recommend specials based on `isSpecial` and user preferences, and answer ingredient/allergy questions.
+    3. Order creation: add/remove items, confirm quantities, compute totals, and send order to backend (`POST /api/orders` or JS backend `/orders`).
+    4. Order status & updates: check kitchen status and notify frontend (cart updates / order tracking).
+    5. Billing & split checks: compute bill, apply taxes/discounts, support splitting among guests, and call billing APIs.
+    6. Staff handoff & exceptions: escalate to human staff for complex requests (refunds, inventory issues, out-of-stock).
+
+Reference → Implementation TODO templates
+  - Purpose: concrete, copy-pasteable TODO templates for adapting patterns from `reference_codebase/` into this repo. Use branches and tests as required.
+
+  Template: Port LiveKit token generator
+  - Reference file: `reference_codebase/.../livekit_token_example.ts` (example)
+  - Target: `ts_backend/src/services/LiveKitService.ts`
+  - Tasks:
+    - [ ] Create `LiveKitService.generateToken(roomName, participantName)` using `livekit-server-sdk` AccessToken.
+    - [ ] Add Zod schema in `ts_backend/src/types/validationSchemas.ts` and route `ts_backend/src/api/routes/livekitRoutes.ts`.
+    - [ ] Add controller `ts_backend/src/api/controllers/LiveKitController.ts` that calls the service.
+    - [ ] Add tests in `ts_backend/tests/api/livekit.test.ts` (mock LIVEKIT creds in `beforeEach()` and assert JWT payload claims).
+    - [ ] Run `cd ts_backend && npm test` and fix failures.
+
+  Template: Add an agent tool for `get_specials`
+  - Reference file: `reference_codebase/.../agent_tools_examples.py`
+  - Target: `AIVoiceAgent/tools/tools.py`
+  - Tasks:
+    - [ ] Implement `@function_tool()` async `get_specials()` that calls TS backend `/api/menu?filter=specials`.
+    - [ ] Register the tool in `AIVoiceAgent/agents/voice_agent.py` and document JSON input/output.
+    - [ ] Add unit tests or a small runner `AIVoiceAgent/tests/test_tools.py` (mock HTTP responses).
+
+  Template: Frontend LiveKit hook example
+  - Reference file: `reference_codebase/.../frontend_livekit_hook.js`
+  - Target: `frontend/src/hooks/useLiveKit.js`
+  - Tasks:
+    - [ ] Compare reference to current `useLiveKit.js`; copy missing features (data message handling for `command` type) into a new branch.
+    - [ ] Add or update frontend tests or a local smoke page to verify data messages trigger navigation/cart updates.
+
+  Copying rules (reminder)
+    - Keep license and attribution where present.
+    - Prefer re-implementation to match repository patterns (MVP for JS backend, RepositoryFactory for TS backend).
+    - Add tests and use `RepositoryFactory.reset()` when needed.
+
+If you'd like, pick one template above and I will implement it now (create service + controller + tests for LiveKit token OR implement the `get_specials` tool in the agent). Which one should I do first?
+
+1) High-level architecture
+  - `backend/` (JS, MVP): Views → Presenters → Models. Example: `backend/views/menuRoutes.js` calls `backend/presenters/menuPresenter.js`.
+  - `ts_backend/` (TS, Repository pattern): Routes → Static Controllers → Static Services → `RepositoryFactory` → Repositories.
+  - `frontend/` (React + Vite): LiveKit integration in `frontend/src/hooks/useLiveKit.js`; cart in `frontend/src/context/CartContext.jsx`.
+  - `AIVoiceAgent/` (Python): agent entry `main.py`, tools in `AIVoiceAgent/tools/tools.py`, prompts in `AIVoiceAgent/prompts/prompts.py`.
+
+2) Critical conventions (do this, not that)
+  - JS backend: always route through Presenters (Views → Presenters → Models). Don't call models from routes.
+  - TS backend: always get repositories via `RepositoryFactory`. Services/controllers are stateless static methods.
+  - TS logging: use `createLogger('Source')` (requestId comes from AsyncLocalStorage) — see `ts_backend/src/utils/logger.ts`.
+  - API responses follow `AppResponse<T>` / `{ success, data?, message?, status? }` (see `ts_backend/src/types/common.ts`).
+
+3) Dev & test commands (from repo root)
+  - JS backend: cd backend && npm install && npm start  (port 5000)
+  - TS backend: cd ts_backend && npm install && npm run dev (port 5001)
+  - Frontend: cd frontend && npm install && npm run dev
+  - Agent: cd AIVoiceAgent && python -m venv venv && .\venv\Scripts\activate && pip install -r requirements.txt && python main.py --room my-agent-room
+  - TS tests: cd ts_backend && npm test  (tests run serially; repo config uses `--runInBand`)
+
+4) LiveKit notes
+  - TS token endpoint: POST `/api/get-token` (ts_backend). JS token endpoint: POST `/get-token` (backend).
+  - Tests mock `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` in `beforeEach()`; no real LiveKit needed for unit tests.
+
+5) Agent tooling
+  - Add a new tool: implement async function in `AIVoiceAgent/tools/tools.py` (use `@function_tool()`), then register it in `AIVoiceAgent/agents/voice_agent.py`.
+  - Edit prompts/personality in `AIVoiceAgent/prompts/prompts.py`.
+
+6) Tests & safety
+  - TS integration tests live under `ts_backend/tests/api/`. Ensure `RepositoryFactory.reset()` is called in `beforeEach()` when altering repository-backed data.
+  - Run tests serially to avoid AsyncLocalStorage/requestId leakage (`--runInBand`).
+
+7) Files to check when changing behavior
+  - JS backend: `backend/app.js`, `backend/views/*`, `backend/presenters/*`, `backend/models/*`
+  - TS backend: `ts_backend/src/app.ts`, `ts_backend/src/api/controllers/*`, `ts_backend/src/services/*`, `ts_backend/src/repositories/*`, `ts_backend/src/utils/logger.ts`
+  - Frontend: `frontend/src/hooks/useLiveKit.js`, `frontend/src/context/CartContext.jsx`
+  - Agent: `AIVoiceAgent/main.py`, `AIVoiceAgent/agents/voice_agent.py`, `AIVoiceAgent/tools/tools.py`, `AIVoiceAgent/prompts/prompts.py`
+
+8) Quick editing rules for AI agents
+  - Prefer small, testable changes. Run TS tests after edits. Preserve public endpoints/response shapes unless asked otherwise.
+  - When updating data access, update tests to use `RepositoryFactory.reset()` where needed.
+
+If you want this shortened further or expanded in any area (logging internals, sample tests, LiveKit JWT details, or agent tool examples), tell me which section to expand.
+
+9) `reference_codebase/` (read-only) — how to use it
+  - This folder is a reference only. Do NOT modify files inside `reference_codebase/` in this repo. Treat it as read-only documentation.
+  - Use it to extract patterns, file layouts, and code examples. Copy/adapt into the appropriate target folders in this repo (`backend/`, `ts_backend/`, `frontend/`, `AIVoiceAgent/`) rather than moving files from `reference_codebase/`.
+  - Suggested mapping workflow:
+    1. Identify the feature or pattern in `reference_codebase/` (e.g., LiveKit token flow, repoFactory pattern, or agent tool wiring).
+    2. Create a small branch and a new folder/file in this repo that implements the pattern (use the same relative paths as targets listed in this file).
+    3. Add tests for the new code (follow `ts_backend/tests/api/` patterns). Use `RepositoryFactory.reset()` when using repository-backed mocks.
+    4. Run TS tests (`cd ts_backend && npm test`) and frontend smoke run before PR.
+  - Mapping examples (reference → target):
+    - LiveKit token generator in reference → `ts_backend/src/services/LiveKitService.ts`
+    - Agent tool examples in reference → `AIVoiceAgent/tools/tools.py` (implement with `@function_tool()`)
+    - Frontend LiveKit hook example in reference → `frontend/src/hooks/useLiveKit.js`
+  - Copying rules
+    - Keep license, attribution, and comments from reference files where applicable.
+    - Prefer re-implementing small pieces to match repo conventions (MVP in JS backend, RepositoryFactory in TS backend) rather than pasting large unrelated modules.
+    - If a reference file depends on large external infra, stub/mocks are preferred for initial implementation and tests.
+  - Checklist before merging a change inspired by the reference code:
+    - [ ] New code implements repo conventions (presenter vs controller, RepositoryFactory, static services).
+    - [ ] Tests added/updated and pass locally (`npm test` in `ts_backend`).
+    - [ ] `RepositoryFactory.reset()` used in affected tests.
+    - [ ] No edits to `reference_codebase/` committed.
+    - [ ] PR description references the source path in `reference_codebase/` for reviewer context.
+## AIWaiter — Copilot instructions (concise)
+
+Purpose: give AI coding agents a short, actionable reference for this repository: architecture, conventions, critical commands, and important files.
+#### 6. **Communication Patterns**       
+- **Ask clarifying questions** - "Do you want me to continue?" before large changes
+- **Explain trade-offs** - Present pros/cons when multiple approaches exist
+- **Show examples** - Code snippets demonstrate patterns better than descriptions
+- **Acknowledge challenges** - "This approach has X downside but Y benefit"
+
+#### 7. **Tool Usage Philosophy**
+- **Prefer specialized tools** - Use `replace_string_in_file` for precise edits, not terminal commands
+- **Read before modify** - Always read file context before making changes
+- **Batch related changes** - Update all similar files (e.g., all routes) together when possible
+- **Verify with tools** - Use `grep_search` to find all instances of patterns being changed
+
+#### 8. **Iteration Approach**
+- **Small, verifiable steps** - Make changes that can be tested immediately
+- **Fail fast** - Run tests early to catch issues before they compound
+- **Refactor with safety** - Tests passing before and after refactor
+- **Challenge assumptions** - "Is this the simplest way?" and "Do we actually need this?"
 # AIWaiter Project Instructions
 
 ## Development Workflow & Collaboration
@@ -176,219 +312,40 @@ logger.error('Something failed', { error });
 1. `requestIdMiddleware` creates unique requestId and wraps `next()` in `requestContext.run()`
 2. AsyncLocalStorage automatically propagates context to all downstream code
 3. Controllers, services, middleware all use `createLogger('SourceName')`
-4. Winston child loggers automatically inject requestId from AsyncLocalStorage
-5. Each concurrent request gets isolated context - no bleeding
 
-**Source Names:**
-- Middleware: `RequestIdMiddleware`, `ValidationMiddleware`, `ErrorHandler`
-- Routes: `HealthCheck`
-- Controllers: `MenuController`, `OrderController`, `UserController`
-- Services: `MenuService`, `OrderService`, `UserService`
+## AIWaiter — Copilot instructions (concise)
 
-## LiveKit Integration
+Purpose: a short, actionable reference for AI coding agents to be productive in this repo.
 
-### Token Generation Flow (TypeScript Backend)
-1. Frontend requests token via `POST /api/get-token` with `{ roomName, participantName }`
-2. **Validation**: Zod middleware validates request body using `tokenRequestSchema`
-3. **Controller**: `LiveKitController.getToken()` extracts parameters and calls service
-4. **Service**: `LiveKitService.generateToken()` creates JWT using `livekit-server-sdk` AccessToken
-5. Frontend connects to LiveKit room with token
+- High-level architecture (what to know quickly)
+  - `backend/` (JS, MVP): Views → Presenters → Models. Example: `backend/views/menuRoutes.js` calls `backend/presenters/menuPresenter.js`.
+  - `ts_backend/` (TS, Repository pattern): Routes → Static Controllers → Static Services → `RepositoryFactory` → Repositories. Example: `ts_backend/src/services/LiveKitService.ts`.
+  - `frontend/` (React + Vite): LiveKit hook at `frontend/src/hooks/useLiveKit.js`; cart at `frontend/src/context/CartContext.jsx`.
+  - `AIVoiceAgent/` (Python): tools in `AIVoiceAgent/tools/tools.py`, prompts in `AIVoiceAgent/prompts/prompts.py`, agent in `AIVoiceAgent/agents/voice_agent.py`.
 
-**Endpoint**: `POST /api/get-token` (TS backend on port 5001)  
-**JS Backend**: `POST /get-token` (JS backend on port 5000, no `/api` prefix)
+- Key conventions (do this)
+  - JS backend: never bypass presenters from routes.
+  - TS backend: use `RepositoryFactory` for repo access and keep services/controllers stateless static methods.
+  - Logging (TS): always use `createLogger('Name')` — requestId is supplied via AsyncLocalStorage (`ts_backend/src/utils/logger.ts`).
+  - API response shape: `{ success: boolean, data?: T, message?: string, status?: number }` (see `ts_backend/src/types/common.ts`).
 
-**TypeScript Implementation Pattern**:
-```typescript
-// Route → Static Controller → Static Service → livekit-server-sdk
-router.post('/get-token', validate(tokenRequestSchema), LiveKitController.getToken);
+- Dev & test commands (from repo root)
+  - JS backend: `cd backend && npm install && npm start` (port 5000)
+  - TS backend: `cd ts_backend && npm install && npm run dev` (port 5001)
+  - Frontend: `cd frontend && npm install && npm run dev`
+  - Agent: `cd AIVoiceAgent && python -m venv venv && .\venv\Scripts\activate && pip install -r requirements.txt && python main.py --room my-agent-room`
+  - Run TS tests: `cd ts_backend && npm test` (tests expect serial execution; repo config sets `--runInBand`).
 
-// Controller (static method)
-static async getToken(req: Request, res: Response) {
-    const { roomName, participantName } = req.body;
-    const result = await LiveKitService.generateToken(roomName, participantName);
-    res.status(result.success ? 200 : 500).json(result);
-}
+- LiveKit notes
+  - TS token endpoint: `POST /api/get-token` (ts_backend). JS token endpoint: `POST /get-token` (backend).
+  - Tests commonly mock `LIVEKIT_API_KEY`/`LIVEKIT_API_SECRET` in `beforeEach()`.
 
-// Service (static method)
-static async generateToken(roomName: string, participantName: string): Promise<AppResponse<{ token: string }>> {
-    const token = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET);
+- Quick editing rules for AI agents
+  - Make small, testable changes. Update/add tests in `ts_backend/tests/api/` when changing behavior.
+  - Preserve public endpoint shapes and response format unless asked otherwise.
+  - When changing data access, update `RepositoryFactory.reset()` usage in tests.
+
+Key files to scan when changing behavior: `backend/*`, `ts_backend/src/{app.ts,services,api,repositories}`, `frontend/src/hooks/useLiveKit.js`, `AIVoiceAgent/*`.
+
+If you'd like, I can shorten further, produce a quick checklist for PR reviewers, or expand any section (logging, tests, LiveKit wiring, agent tools).
     token.identity = participantName;
-    token.addGrant({ room: roomName, roomJoin: true, canPublish: true, canSubscribe: true });
-    return { success: true, data: { token: await token.toJwt() } };
-}
-```
-
-**JWT Structure**: `header.payload.signature` with claims:
-- `sub`: participant identity
-- `video.room`: room name
-- `video.roomJoin/canPublish/canSubscribe`: permissions
-- `iss`: LIVEKIT_API_KEY
-- `exp/nbf`: expiration times
-
-**Testing Pattern**:
-```typescript
-beforeEach(() => {
-    // Mock credentials - livekit-server-sdk generates JWTs locally
-    process.env.LIVEKIT_API_KEY = 'test-api-key';
-    process.env.LIVEKIT_API_SECRET = 'test-api-secret';
-});
-
-// JWT validation test - decode payload and verify claims
-const parts = token.split('.');
-const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-expect(payload.sub).toBe('test-participant');
-expect(payload.video.room).toBe('test-room');
-```
-
-**Environment Variables Required**:
-- `LIVEKIT_API_KEY` - API key from LiveKit dashboard
-- `LIVEKIT_API_SECRET` - Secret for JWT signing (keep secure!)
-
-### Voice Agent Function Tools
-The Python agent uses `@function_tool()` decorated async functions in `AIVoiceAgent/tools/tools.py`:
-- `get_menu()` - Fetches full menu from backend
-- `get_specials()` - Gets special items
-- `place_order(order_details)` - Creates order (format: `{userId, items: [{itemId, quantity}]}`)
-- `get_order_status(order_id)` - Checks order status
-
-### Frontend Command Handling
-The agent sends data messages to control the frontend via `useLiveKit` hook:
-```javascript
-// Commands: { type: 'navigate', payload: '/menu' } or { type: 'add_to_cart', payload: item }
-newRoom.on(RoomEvent.DataReceived, (payload, participant) => {
-    const message = JSON.parse(decoder.decode(payload));
-    if (message.type === 'command') {
-        handleCommand(message); // Triggers navigation or cart updates
-    }
-});
-```
-
-## Development Workflows
-
-### Starting the Application
-**Order matters** - backend must be running before agent:
-
-```powershell
-# Terminal 1 - Backend (choose one)
-cd backend; npm install; npm start           # JS backend on port 5000
-cd ts_backend; npm install; npm run dev      # TS backend on port 5001
-
-# Terminal 2 - Frontend  
-cd frontend; npm install; npm run dev
-
-# Terminal 3 - AI Agent (after backend is up)
-cd AIVoiceAgent; python -m venv venv; .\venv\Scripts\activate; pip install -r requirements.txt; python main.py --room my-agent-room
-```
-
-### TypeScript Backend Commands
-```powershell
-cd ts_backend
-npm run dev          # Development with hot reload (ts-node-dev --files)
-npm run build        # Compile TypeScript to dist/
-npm start            # Run compiled JavaScript from dist/
-npm test             # Run Jest tests (--runInBand for serial execution)
-npm run test:watch   # Watch mode for tests
-npm run test:coverage # Generate coverage report
-```
-
-### Environment Variables Required
-- **Backend (JS/TS)**: `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `PORT` (5000 for JS, 5001 for TS)
-- **AI Agent**: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `GOOGLE_APPLICATION_CREDENTIALS`, `GOOGLE_API_KEY`
-- Frontend hardcodes LiveKit URL in `useLiveKit.js` (line 6)
-
-## Key Conventions
-
-### API Response Format
-All presenters return structured responses:
-```javascript
-{ success: true, data: [...] }          // Success
-{ success: false, message: string, status?: number }  // Error
-```
-
-### Logging Pattern
-Use `utils/logger.js` for consistent logging:
-```javascript
-const { log, error } = require('../utils/logger');
-log('Operation successful');
-error(`Error: ${err.message}`);
-```
-
-### Cart Management
-Frontend uses React Context (`context/CartContext.jsx`) for global cart state:
-- `addToCart(item)` - Auto-increments quantity if item exists
-- `updateQuantity(itemId, quantity)` - Removes if quantity ≤ 0
-- `cartCount` and `total` are computed properties
-
-### Mock Data Structure
-Menu items in `models/menuItem.js`:
-```javascript
-{ id: 'm1', name: string, description: string, price: number, 
-  category: string, type: 'veg'|'non-veg', isSpecial: boolean }
-```
-
-## Agent Customization
-
-### Modifying Agent Behavior
-Edit `AIVoiceAgent/prompts/prompts.py` for personality/instructions. Current persona: Traditional Indian restaurant waiter using "Namaste", "ji", "sahib/madam".
-
-### Adding New Tools
-1. Create async function in `tools/tools.py` with `@function_tool()` decorator
-2. Add to `VoiceAgent.__init__()` tools list in `agents/voice_agent.py`
-3. Document expected JSON format in docstring for LLM
-
-## Testing (TypeScript Backend)
-
-### Integration Tests
-`ts_backend/tests/api/` contains comprehensive integration tests using Jest + Supertest:
-- **37 tests** covering all endpoints (health, menu, order, user) + concurrent request scenarios
-- Tests run serially (`--runInBand`) to prevent race conditions
-- `beforeEach()` calls `RepositoryFactory.reset()` for test isolation
-- **Concurrent tests** verify AsyncLocalStorage context isolation (no request bleeding)
-- **Critical**: Static services/controllers use RepositoryFactory which provides fresh mock data
-
-### Test Patterns
-```typescript
-import { RepositoryFactory } from '../../src/repositories/RepositoryFactory';
-
-describe('Menu API', () => {
-  beforeEach(() => {
-    RepositoryFactory.reset(); // Fresh data for each test
-  });
-
-  it('should return all menu items', async () => {
-    const response = await request(app).get('/api/menu');
-    expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-  });
-});
-```
-
-**Important**: HTTP 204 (No Content) responses have empty body - don't check `response.body.success`.
-
-## Critical Files
-- `backend/app.js` - JS backend Express app setup, LiveKit token endpoint
-- `ts_backend/src/app.ts` - TS backend Express app with middleware chain
-- `ts_backend/src/services/LiveKitService.ts` - JWT token generation with livekit-server-sdk
-- `ts_backend/src/api/controllers/LiveKitController.ts` - LiveKit token endpoint handler
-- `ts_backend/src/api/routes/livekitRoutes.ts` - POST /api/get-token endpoint definition
-- `ts_backend/src/repositories/RepositoryFactory.ts` - Repository factory with reset() for tests
-- `ts_backend/src/types/common.ts` - AppResponse<T> standardized response type
-- `ts_backend/src/types/validationSchemas.ts` - Zod schemas including tokenRequestSchema
-- `ts_backend/src/utils/logger.ts` - Winston logger with AsyncLocalStorage context
-- `ts_backend/jest.config.js` - Jest configuration with ts-jest
-- `ts_backend/tests/api/livekit.test.ts` - 12 integration tests with JWT validation
-- `frontend/src/hooks/useLiveKit.js` - Complete LiveKit integration logic
-- `AIVoiceAgent/main.py` - Agent entrypoint with backend health check
-- `AIVoiceAgent/agents/voice_agent.py` - Agent class with Gemini Realtime model
-
-## Common Pitfalls
-- **JS Backend**: Don't use MVC terminology - it's MVP (Presenter, not Controller)
-- **TS Backend**: Always use RepositoryFactory for repositories - services/controllers are static methods
-- **Testing**: Always use `--runInBand` to prevent parallel test race conditions
-- **TypeScript**: Include `tests/**/*` in tsconfig.json for VS Code IntelliSense
-- **LiveKit Testing**: Tests mock `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET` in `beforeEach()` - no real credentials needed
-- **LiveKit Endpoint**: TS backend uses `/api/get-token`, JS backend uses `/get-token` (no `/api` prefix)
-- **JWT Validation**: Use `Buffer.from(parts[1], 'base64')` to decode JWT payload for testing
-- Always check backend health before starting agent (`main.py` does this)
-- Audio issues? Frontend needs user interaction to play audio (browser autoplay policies)
-- Agent tools must return strings, not raw response objects
